@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+  <TargetFramework>net7.0</TargetFramework>
+</PropertyGroup>
+
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+  <OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
+</PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+  <OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
+</PropertyGroup>
+<PropertyGroup>
+  <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+</PropertyGroup>
+
+<ItemGroup>
+    <Reference Include="AnimLib">
+        <HintPath>/Projects/animlib/AnimLib/bin/Debug/net7.0/AnimLib.dll</HintPath>
+    </Reference>
+</ItemGroup>
+
+</Project>
