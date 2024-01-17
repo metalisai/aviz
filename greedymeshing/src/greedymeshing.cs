@@ -51,11 +51,7 @@ public async Task Animation(World world, Animator animator) {
     var cam = world.ActiveCamera as PerspectiveCamera;
 
     cam.ClearColor = new Color(0.035f, 0.03f, 0.05f, 1.0f);
-    //cam.ClearColor = new Color(3, 1, 4, 235);
     cam.Transform.Pos = new Vector3(-10.0f, 0.0f, -15.0f);
-    //world.ActiveCamera.Transform.LookAt(new Vector3(0.0f, 0.0f, 0.0f));
-    //var lookAtQuat = Quaternion.LookAt(world.ActiveCamera.Transform.Pos, new Vector3(0.0f, 0.0f, 0.0f), new Vector3(0.0f, -1.0f, 0.0f));
-    //world.ActiveCamera.Transform.Rot = lookAtQuat;
 
     var code = new Text2D("bool data[8][8][8]");
     code.Anchor = (0.5f, 0.0f);
@@ -64,12 +60,6 @@ public async Task Animation(World world, Animator animator) {
 
     var lookRotation = Quaternion.LookRotation((Vector3.ZERO-cam.Transform.Pos).Normalized, Vector3.UP);
     world.ActiveCamera.Transform.Rot = lookRotation;
-    //_ = Animate.OrbitAndLookAt(cam.Transform, Vector3.UP, Vector3.ZERO, 360.0f, 15.0f);
-    /*_ = Animate.Update(() => {
-        var toOrigin = (Vector3.ZERO - world.ActiveCamera.Transform.Pos).Normalized;
-        var lookRotation = Quaternion.LookRotation(toOrigin, Vector3.UP);
-        world.ActiveCamera.Transform.Rot = lookRotation;
-    }, System.Threading.CancellationToken.None);*/
 
     var mesh = new Mesh();
     mesh.Vertices = new List<Vector3> {
@@ -112,9 +102,6 @@ public async Task Animation(World world, Animator animator) {
         new Vector3(0.0f, 3.0f, 0.0f)
     );
     quad.Transform.Pos = new Vector3(0.0f, 0.0f, 1.0f);
-    //world.CreateInstantly(quad);
-    //world.CreateInstantly(line);
-    //world.CreateInstantly(mesh);
 
     Vector3 offset = new Vector3(-gridSize/2.0f - 0.5f, -gridSize/2.0f - 0.5f, -gridSize/2.0f - 0.5f);
 
@@ -193,7 +180,7 @@ public async Task Animation(World world, Animator animator) {
     await Time.WaitSeconds(2.0f);
     for (int i = 0; i < cubes.Count; i++) {
         int localI = i;
-        rexpT.Add(Animate.InterpF(x => cubes[localI].Transform.Scale = new Vector3(x, x, x), 1.0f, 0.2f, 1.0f));
+        rexpT.Add(Animate.InterpF(x => cubes[localI].Transform.Scale = new Vector3(x), 1.0f, 0.2f, 1.0f));
     }
     _  = Animate.InterpF(x => code.Color = code.Color.WithA(x), 1.0f, 0.0f, 1.0f);
     await Task.WhenAll(rexpT);
@@ -799,11 +786,6 @@ public async Task Animation(World world, Animator animator) {
             quad.q.Outline = quad.q.Outline.WithA(MathF.Max(x, quad.q.Outline.A));
         }
     }, 0.0f, 1.0f, 0.5f);
-
-    // end
-
-    //await Animate.InterpF(x => line.Width = x, 1.0f, 5.0f, 1.0f);
-    //await Animate.Offset(cube.Transform, new Vector3(10.0f, 0.0f, 0.0f), 1.0f);
 
     await Time.WaitSeconds(15.0f);
 }
