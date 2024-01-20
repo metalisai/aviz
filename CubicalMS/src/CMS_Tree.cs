@@ -95,7 +95,7 @@ public class CMSCell {
 
     // SUBDIVIDECELL from Cubical Marching Squares paper
     public void SubdivideCell(Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections, int depth = 0) {
-        if (depth > 3) {
+        if (depth > 1) {
             return;
         }
 
@@ -533,9 +533,10 @@ public class CMSTree {
 
                 var unique = loop.Distinct().ToArray();
                 var sharpIndices = unique.Where(x => vertices[x].sharp).ToArray();
-                var sharpCount = sharpIndices.Length;
-
-                if (sharpCount == 2) {
+                if (sharpIndices.Length == 2 
+                    && !adjacencies[sharpIndices[0], sharpIndices[1]]
+                    && !forceFlat
+                ) {
                     // split the loop in two
                     var sharpIdx = sharpIndices[0]; 
                     var sharpIdx2 = sharpIndices[1];
