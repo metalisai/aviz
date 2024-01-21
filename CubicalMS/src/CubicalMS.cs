@@ -591,6 +591,48 @@ public Line3D CubicalMarchingSquares() {
     return lines;
 }
 
+
+public Mesh DoCMS2(Func<Vector3, float> evalF, Func<Vector3, Vector3> normalF, int nmax = 0) {
+    Debug.Warning("CMS2 is not implemented yet");
+    List<(Vector3, Vector3)> intersectionsInternal = new();
+    List<(Vector3, Vector3)> intersectionsFace = new();
+    List<(Vector3, Vector3)> intersectionNormals = new();
+
+    var tree = new CMSTree();
+    var sw = new System.Diagnostics.Stopwatch();
+    sw.Start();
+    Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntr = (pos) => {
+        return GetIntersections(pos, evalF, normalF);
+    };
+    tree.Init(4, 8.0f, new Vector3(-4.0f), getIntr, nmax: 0);
+    Debug.Log($"CMS2 tree init took {sw.ElapsedMilliseconds} ms");
+    sw.Restart();
+    tree.CalculateIntersections(tree.root, getIntr);
+    Debug.Log($"CMS2 tree intersections took {sw.ElapsedMilliseconds} ms");
+
+    List<CMSCell> cells = new List<CMSCell>();
+    tree.getLeafCells(tree.root, cells);
+
+    List<(Vector3 s, Vector3 e)> segments = new();
+
+    Vector3[] meshVertices;
+    int[] meshIndices;
+    sw.Restart();
+    Func<Vector3, bool> eval = (pos) => {
+        return evalF(pos) < 0;
+    };
+    tree.ExtractSurface(out meshVertices, out meshIndices, eval);
+    Debug.Log($"CMS2 tree surface extraction took {sw.ElapsedMilliseconds} ms");
+    sw.Stop();
+
+    var mesh = new Mesh();
+    mesh.Vertices = meshVertices;
+    mesh.Indices = meshIndices.Select(i => (uint)i).ToArray();
+    mesh.Color = new Color(0.2f, 0.2f, 1.0f, 1.0f);
+
+    return mesh;
+}
+
 public Mesh DoCMS() {
     List<(Vector3, Vector3)> intersectionsInternal = new();
     List<(Vector3, Vector3)> intersectionsFace = new();
@@ -602,7 +644,8 @@ public Mesh DoCMS() {
     Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntr = (pos) => {
         return GetIntersections(pos, Evaluate, EvaluateNormal);
     };
-    tree.Init(8, 16.0f, new Vector3(-8.0f, -8.0f, -8.0f), getIntr);
+    Debug.Log($"Start CMS");
+    tree.Init(8, 16.0f, new Vector3(-8.0f, -8.0f, -8.0f), getIntr, nmax: 1);
     Debug.Log($"CMS tree init took {sw.ElapsedMilliseconds} ms");
     sw.Restart();
     tree.CalculateIntersections(tree.root, getIntr);
@@ -683,7 +726,12 @@ public Mesh DoCMS() {
     Vector3[] meshVertices;
     int[] meshIndices;
     sw.Restart();
-    tree.ExtractSurface(out meshVertices, out meshIndices);
+
+    Func<Vector3, bool> eval = (pos) => {
+        return CubicalMS.Evaluate(pos) < 0;
+    };
+
+    tree.ExtractSurface(out meshVertices, out meshIndices, eval);
     Debug.Log($"CMS tree surface extraction took {sw.ElapsedMilliseconds} ms");
     sw.Stop();
 
@@ -1092,7 +1140,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }
 
     Func<Vector3, float> tinyCube = pos => {
-        return sdBox(pos, new Vector3(1.5f));
+        return sdBox(pos + new Vector3(float.Epsilon), new Vector3(1.5f));
     };
 
     Func<Vector3, Vector3> tinyCubeNormal = pos => {
@@ -1288,6 +1336,9 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }
 
     var cam = world.ActiveCamera;
+    var camOrigRot = cam.Transform.Rot;
+    var camOrigPos = cam.Transform.Pos;
+
     var targetPosition = cam.Transform.Pos + new Vector3(-4.0f, 0.0f, 9.0f);
     var targetLookAt = min + new Vector3(0.5f, 3.5f, 1.5f);
     var toTarget = targetLookAt - targetPosition;
@@ -1592,7 +1643,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     mesh.Vertices = fanV.ToArray();
     mesh.Indices = fanI.ToArray();
     mesh.Color = Color.ORANGE;
-    world.CreateInstantly(mesh);
+    await world.CreateFadeIn(mesh, 0.5f);
 
     await Time.WaitSeconds(1.0f);
 
@@ -1674,7 +1725,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     fanMesh2.Indices = fanI.ToArray();
     fanMesh2.Color = Color.ORANGE;
     fanMesh2.Outline = Color.BLACK;
-    world.CreateInstantly(fanMesh2);
+    await world.CreateFadeIn(fanMesh2, 0.5f);
 
     await Time.WaitSeconds(1.0f);
 
@@ -1763,6 +1814,89 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     };
     _ = world.CreateFadeIn(blueLine, 0.5f);
     await Time.WaitSeconds(1.0f);
+    await Animate.Color(blueLine, Color.YELLOW, 0.5f);
+
+    var sharpCenter1 = new Sphere();
+    sharpCenter1.Radius = 0.03f;
+    sharpCenter1.Color = 1.5f*Color.ORANGE;
+    sharpCenter1.Transform.Pos = new Vector3(0.75f, 3.5f, 1.5f) + min;
+    var sharpCenter2 = world.Clone(sharpCenter1);
+    sharpCenter2.Transform.Pos = new Vector3(0.5f, 3.25f, 1.5f) + min;
+    _ = world.CreateFadeIn(sharpCenter1, 0.5f);
+    await world.CreateFadeIn(sharpCenter2, 0.5f);
+    _ = Animate.Color(sharpCenter1, Color.ORANGE, 0.5f);
+    await Animate.Color(sharpCenter2, Color.ORANGE, 0.5f);
+
+    await Time.WaitSeconds(1.0f);
+
+    Mesh fanMesh31 = new Mesh();
+    fanV.Clear();
+    fanI.Clear();
+    fanV.Add(new Vector3(0.5f, 3.0f, 1.0f) + min);
+    fanV.Add(new Vector3(0.5f, 3.0f, 2.0f) + min);
+    fanV.Add(new Vector3(0.5f, 3.5f, 2.0f) + min);
+    fanV.Add(new Vector3(0.5f, 3.5f, 1.0f) + min);
+    fanV.Add(sharpCenter2.Transform.Pos);
+    fanI.AddRange([0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4]);
+    fanMesh31.Vertices = fanV.ToArray();
+    fanMesh31.Indices = fanI.ToArray();
+    fanMesh31.Color = Color.ORANGE;
+    fanMesh31.Outline = Color.BLACK;
+    await world.CreateFadeIn(fanMesh31, 0.5f);
+
+    await Time.WaitSeconds(1.0f);
+
+    var fanMesh32 = world.Clone(fanMesh31);
+    fanV.Clear();
+    fanI.Clear();
+    fanV.Add(new Vector3(0.5f, 3.5f, 1.0f) + min);
+    fanV.Add(new Vector3(0.5f, 3.5f, 2.0f) + min);
+    fanV.Add(new Vector3(1.0f, 3.5f, 2.0f) + min);
+    fanV.Add(new Vector3(1.0f, 3.5f, 1.0f) + min);
+    fanV.Add(sharpCenter1.Transform.Pos);
+    fanI.AddRange([0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4]);
+    fanMesh32.Vertices = fanV.ToArray();
+    fanMesh32.Indices = fanI.ToArray();
+    fanMesh32.Color = Color.ORANGE;
+    fanMesh32.Outline = Color.BLACK;
+    await world.CreateFadeIn(fanMesh32, 0.5f);
+
+    await Time.WaitSeconds(1.0f);
+
+    var wholeMesh = DoCMS2(tinyCube, tinyCubeNormal, nmax: 0);
+    wholeMesh.Color = Color.ORANGE;
+    wholeMesh.Outline = Color.BLACK;
+    async Task createMesh() {
+        await world.CreateFadeIn(wholeMesh, 0.5f);
+        await Animate.InterpF(x => {
+            foreach(var cl in cornerLines2) {
+                cl.Color = Color.Lerp(cl.Color, Color.TRANSPARENT, x);
+            }
+            blueLine.Color = Color.Lerp(blueLine.Color, Color.TRANSPARENT, x);
+            cornerLines.Color = Color.Lerp(cornerLines.Color, Color.TRANSPARENT, x);
+            cornerContour.Color = Color.Lerp(cornerContour.Color, Color.TRANSPARENT, x);
+            cornerContour2.Color = Color.Lerp(cornerContour2.Color, Color.TRANSPARENT, x);
+            fanMesh31.Color = Color.Lerp(fanMesh31.Color, Color.TRANSPARENT, x);
+            fanMesh31.Outline = Color.Lerp(fanMesh31.Outline, Color.TRANSPARENT, x);
+            fanMesh32.Color = Color.Lerp(fanMesh32.Color, Color.TRANSPARENT, x);
+            fanMesh32.Outline = Color.Lerp(fanMesh32.Outline, Color.TRANSPARENT, x);
+        }, 0.0f, 1.0f, 1.0f);
+        world.Destroy(blueLine);
+        world.Destroy(cornerLines);
+        world.Destroy(cornerContour);
+        world.Destroy(cornerContour2);
+        world.Destroy(cornerLines2);
+        world.Destroy(fanMesh31);
+        world.Destroy(fanMesh32);
+    }
+    _ = createMesh();
+
+    startRot = cam.Transform.Rot;
+    await Animate.InterpF(x => {
+        cam.Transform.Rot = Quaternion.Slerp(startRot, camOrigRot, x);
+        cam.Transform.Pos = Vector3.Lerp(targetPosition, camOrigPos, x);
+    }, 0.0f, 1.0f, 1.0f);
+    await Animate.OrbitAndLookAt(cam.Transform, Vector3.UP, Vector3.ZERO, 360.0f, 5.0f);
 
     return grid;
 }

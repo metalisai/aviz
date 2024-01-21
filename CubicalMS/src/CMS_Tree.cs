@@ -94,8 +94,8 @@ public class CMSCell {
     }
 
     // SUBDIVIDECELL from Cubical Marching Squares paper
-    public void SubdivideCell(Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections, int depth = 0) {
-        if (depth > 1) {
+    public void SubdivideCell(Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections, int maxDepth, int depth = 0) {
+        if (depth > maxDepth) {
             return;
         }
 
@@ -107,7 +107,7 @@ public class CMSCell {
         if (HasEdgeAmbiguity(edgeIntersections) || LikelyToContainComplexSurface(edgeIntersections)) {
             Subdivide();
             foreach (var child in children) {
-                child.SubdivideCell(getIntersections, depth + 1);
+                child.SubdivideCell(getIntersections, maxDepth, depth + 1);
             }
         }
     }
@@ -209,7 +209,7 @@ public class CMSCell {
                         edgeNode?.GetIntersections(intersections, tests);
 
                         if (intersections.Count == 0) {
-                            throw new Exception("No intersections on edge with a sign change.");
+                            throw new Exception($"No intersections on edge with a sign change. {p0} {p1}, s1 {faceSamples[c1]} s2 {faceSamples[c2]}");
                         } else if (intersections.Count > 1) {
                             Debug.Warning($"Multiple intersections on edge with a sign change.");
                         }
@@ -368,7 +368,7 @@ public class CMSTree {
         root.children[5].children[2].Subdivide();
     }
 
-    public void Init(int n0, float size0, Vector3 offset, Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections) {
+    public void Init(int n0, float size0, Vector3 offset, Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections, int nmax = 1) {
         float cellSize = size0 / n0;
 
         root = new CMSCell();
@@ -391,7 +391,7 @@ public class CMSTree {
         List<CMSCell> leafCells = new List<CMSCell>();
         getLeafCells(root, leafCells);
         foreach (var cell in leafCells) {
-            cell.SubdivideCell(getIntersections, 0);
+            cell.SubdivideCell(getIntersections, nmax, 0);
         }
     }
 
@@ -450,7 +450,7 @@ public class CMSTree {
         }
     }
 
-    public void ExtractSurface(out Vector3[] outVertices, out int[] outIndices) {
+    public void ExtractSurface(out Vector3[] outVertices, out int[] outIndices, Func<Vector3, bool> isInsideFunc) {
         var leaves = new List<CMSCell>();
         getLeafCells(root, leaves);
 
@@ -459,12 +459,8 @@ public class CMSTree {
         List<Vector3> retVertices = new List<Vector3>();
         List<int> retIndices = new List<int>();
 
-        Func<Vector3, bool> eval = (pos) => {
-            return CubicalMS.Evaluate(pos) < 0;
-        };
-
         foreach (var leaf in leaves) {
-            leaf.EvaluateFaces(eval);
+            leaf.EvaluateFaces(isInsideFunc);
         }
 
         foreach (var leaf in leaves) {
@@ -606,10 +602,11 @@ public class CMSTree {
                     //Debug.Log($"p: {p}");
                 } catch (Exception) {
                     Vector3 sum = Vector3.ZERO;
-                    foreach (var n in nonZeroNormals) {
-                        sum += n.Value.Item2;
+                    var distinctIndices = loop.Distinct().ToArray();
+                    foreach (var idx in distinctIndices) {
+                        sum += vertices[idx].v;
                     }
-                    componentCenter = sum * (1.0f / nonZeroCount);
+                    componentCenter = sum * (1.0f / distinctIndices.Length);
                     if (!firstLoop) {
                         var sphere = new Sphere();
                         sphere.Radius = 0.03f + random.NextSingle()*0.01f;
