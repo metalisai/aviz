@@ -1046,48 +1046,395 @@ public async Task Animation(World world, Animator animator) {
     origin = new Vector3(-2.0f);
     var grid = await AnimateGrid(origin, 1.0f, 4, new Color(0.15f, 0.05f, 0.02f, 0.35f));
     grid.Width = 1.0f;
+
     //await world.CreateFadeIn(grid, 1.0f);
 
-    /*var interSections = GetGridIntersections(origin, cellSize, gridSize);
-    List<Vector3> normalList = new List<Vector3>();
-    List<Sphere> sphereList = new List<Sphere>();
-    foreach (var (p, n) in interSections) {
-        var s = world.Clone(c1);
-        s.Transform.Pos = p;
-        s.Radius = 0.03f;
-        s.Color = Color.YELLOW;
-        sphereList.Add(s);
-        _ = world.CreateFadeIn(s, 0.5f);
-        normalList.Add(p);
-        normalList.Add(p + 0.5f*n);
+    await Time.WaitSeconds(1.0f);
+    await orbitTask;
+
+    await AnimateAmbiguous();
+
+}
+
+async Task AnimateAmbiguous() {
+    var gridPath1 = new PathBuilder();
+    gridPath1.Grid(100.0f, new Vector2(-700.0f, -300.0f), new Vector2(-100.0f, 300.0f));
+    var gridPath2 = new PathBuilder();
+    gridPath2.Grid(100.0f, new Vector2(100.0f, -300.0f), new Vector2(700.0f, 300.0f));
+
+    var gridShape1 = new Shape(gridPath1);
+    gridShape1.ContourColor = Color.WHITE;
+    world.CreateInstantly(gridShape1);
+    var gridShape2 = new Shape(gridPath2);
+    gridShape2.ContourColor = Color.WHITE;
+    world.CreateInstantly(gridShape2);
+
+    var examplePath = new PathBuilder();
+    examplePath.MoveTo(new Vector2(-300.0f, 120.0f));
+    examplePath.LineTo(new Vector2(-80.0f, -100.0f));
+    examplePath.LineTo(new Vector2(-40.0f, 30.0f));
+    examplePath.LineTo(new Vector2(120.0f, 30.0f));
+    examplePath.LineTo(new Vector2(-40.0f, 150.0f));
+    examplePath.LineTo(new Vector2(-40.0f, 70.0f));
+    examplePath.Close();
+    var exampleShape = new Shape(examplePath);
+    exampleShape.Mode = ShapeMode.FilledContour;
+    exampleShape.ContourColor = Color.BLACK;
+    exampleShape.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
+    exampleShape.Transform.Pos = new Vector3(-300.0f, 0.0f, 0.0f);
+    world.CreateInstantly(exampleShape);
+
+    var examplePath2a = new PathBuilder();
+    examplePath2a.MoveTo(new Vector2(-300.0f, 120.0f));
+    examplePath2a.LineTo(new Vector2(-80.0f, -100.0f));
+    examplePath2a.LineTo(new Vector2(-60.0f, 30.0f));
+    examplePath2a.Close();
+
+    var examplePath2b = new PathBuilder();
+    examplePath2b.MoveTo(new Vector2(120.0f, 90.0f));
+    examplePath2b.LineTo(new Vector2(-40.0f, 150.0f));
+    examplePath2b.LineTo(new Vector2(-40.0f, 50.0f));
+    examplePath2b.Close();
+
+    var exampleShape2a = new Shape(examplePath2a);
+    exampleShape2a.Mode = ShapeMode.FilledContour;
+    exampleShape2a.ContourColor = Color.BLACK;
+    exampleShape2a.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
+    exampleShape2a.Transform.Pos = new Vector3(500.0f, 0.0f, 0.0f);
+    world.CreateInstantly(exampleShape2a);
+    var exampleShape2b = new Shape(examplePath2b);
+    exampleShape2b.Mode = ShapeMode.FilledContour;
+    exampleShape2b.ContourColor = Color.BLACK;
+    exampleShape2b.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
+    exampleShape2b.Path = examplePath2b;
+    exampleShape2b.Transform.Pos = new Vector3(500.0f, 0.0f, 0.0f);
+    world.CreateInstantly(exampleShape2b);
+
+    // yellow highlight
+
+    var highlightPath1 = new PathBuilder();
+    highlightPath1.Rectangle(new Vector2(-400.0f, 0.0f), new Vector2(-300.0f, 100.0f));
+    var highlightPath2 = new PathBuilder();
+    highlightPath2.Rectangle(new Vector2(400.0f, 0.0f), new Vector2(500.0f, 100.0f));
+    var highlightShape1 = new Shape(highlightPath1);  
+    highlightShape1.Mode = ShapeMode.Contour;
+    highlightShape1.ContourColor = 1.2f*Color.VIOLET;
+    highlightShape1.SortKey = 1;
+    highlightShape1.ContourSize = 3.0f;
+    world.CreateInstantly(highlightShape1);
+    var highlightShape2 = new Shape(highlightPath2);  
+    highlightShape2.Mode = ShapeMode.Contour;
+    highlightShape2.ContourColor = 1.2f*Color.VIOLET;
+    highlightShape2.SortKey = 1;
+    highlightShape2.ContourSize = 3.0f;
+    world.CreateInstantly(highlightShape2);
+
+
+    Vector2[] quadCorners1 = new Vector2[] {
+        new Vector2(-400.0f, 0.0f),
+        new Vector2(-300.0f, 0.0f),
+        new Vector2(-300.0f, 100.0f),
+        new Vector2(-400.0f, 100.0f),
+    };
+
+    Vector2[] quadCorners2 = new Vector2[] {
+        new Vector2(400.0f, 0.0f),
+        new Vector2(500.0f, 0.0f),
+        new Vector2(500.0f, 100.0f),
+        new Vector2(400.0f, 100.0f),
+    };
+
+    await Time.WaitSeconds(2.0f);
+
+    bool[] cornerValues = new bool[] { true, false, true, false };
+    Circle[] cornerCircles1 = new Circle[4];
+    Circle[] cornerCircles2 = new Circle[4];
+    for (int i = 0; i < 4; i++) {
+        var c1 = new Circle(10.0f);
+        c1.Color = cornerValues[i] ? Color.WHITE : Color.BLACK;
+        c1.Transform.Pos = quadCorners1[i];
+        c1.SortKey = 2;
+        _ = world.CreateFadeIn(c1, 0.5f);
+        cornerCircles1[i] = c1;
+        var c2 = new Circle(10.0f);
+        c2.Color = cornerValues[i] ? Color.WHITE : Color.BLACK;
+        c2.Transform.Pos = quadCorners2[i];
+        c2.SortKey = 2;
+        await world.CreateFadeIn(c2, 0.5f);
+        cornerCircles2[i] = c2;
     }
-    var normals = new Line3D();
-    normals.Color = Color.GREEN;
-    normals.Vertices = normalList.ToArray();
-    normals.Width = 2.0f;
-    await Time.WaitSeconds(2.0f);
-    await world.CreateFadeIn(normals, 1.0f);
-    await Time.WaitSeconds(2.0f);
 
+    await Time.WaitSeconds(1.0f);
+
+    var caseText1 = new Text2D("1010");
+    caseText1.Transform.Pos = new Vector3(-500.0f, -400.0f, 0.0f);
+    caseText1.Size = 64.0f;
+    var shapes = caseText1.CurrentShapes.Select(x => x.s).ToArray();
+    shapes[0].Color = Color.WHITE;
+    shapes[1].Color = Color.BLACK;
+    shapes[2].Color = Color.WHITE;
+    shapes[3].Color = Color.BLACK;
+    var caseText2 = world.Clone(caseText1);
+    caseText2.Transform.Pos = new Vector3(300.0f, -400.0f, 0.0f);
+    var shapes2 = caseText2.CurrentShapes.Select(x => x.s).ToArray();
+    shapes2[0].Color = Color.WHITE;
+    shapes2[1].Color = Color.BLACK;
+    shapes2[2].Color = Color.WHITE;
+    shapes2[3].Color = Color.BLACK;
+
+    Shape[] mcs1 = new Shape[4];
+    Shape[] mcs2 = new Shape[4];
+    Task<Shape>[] mcs2Tasks = new Task<Shape>[4];
+    Task<Shape>[] mcs1Tasks = new Task<Shape>[4];
+    async Task createChar() {
+        Task task = null;
+        for (int i = 0; i < 4; i++) {
+            mcs1[i] = world.CreateClone(cornerCircles1[i]);
+            mcs2[i] = world.CreateClone(cornerCircles2[i]);
+            task =  Animate.Move(mcs1[i].Transform, caseText1.Transform.Pos+shapes[i].Transform.Pos);
+            task =  Animate.Move(mcs2[i].Transform, caseText2.Transform.Pos+shapes[i].Transform.Pos);
+        }
+        await task;
+        for (int i = 0; i < 4; i++) {
+            task = mcs1Tasks[i] = Animate.CreateMorph(mcs1[i], shapes[i], 1.0f);
+            mcs2Tasks[i] = Animate.CreateMorph(mcs2[i], shapes2[i], 1.0f);
+        }
+        await task;
+    }
+    await createChar();
+
+    async Task showCase(int[] edges, Vector2 pos, string label, bool invert = false) {
+        PathBuilder pb = new PathBuilder();
+        pb.Rectangle(new Vector2(0.0f), new Vector2(100.0f));
+        var shape = new Shape(pb);
+        shape.Mode = ShapeMode.Contour;
+        shape.ContourColor = Color.WHITE;
+        shape.ContourSize = 3.0f;
+        shape.Transform.Pos = new Vector3(pos, 0.0f);
+        shape.SortKey = 1;
+        _ = world.CreateFadeIn(shape, 0.5f);
+        for (int i = 0; i < edges.Length; i+=2) {
+            var (c11, c12) = CMS.quadEdgeCorners[edges[i]];
+            var (c21, c22) = CMS.quadEdgeCorners[edges[i+1]];
+            var pb2 = new PathBuilder();
+            var repCheck = new int[] { c11, c12, c21, c22 };
+            // find repeated corner
+            if (!invert) {
+                pb2.MoveTo(50f*(CMS.quadCorners[c11] + CMS.quadCorners[c12]));
+                pb2.LineTo(50f*(CMS.quadCorners[c21] + CMS.quadCorners[c22]));
+                int rep = -1;
+                for (int j = 0; j < 4; j++) {
+                    if (repCheck.Count(x => x == repCheck[j]) > 1) {
+                        rep = repCheck[j];
+                        break;
+                    }
+                }
+                pb2.LineTo(100f*CMS.quadCorners[rep]);
+            } else {
+                pb2.MoveTo(100.0f*new Vector2(0.0f));
+                pb2.LineTo(100.0f*new Vector2(0.5f, 0.0f));
+                pb2.LineTo(100.0f*new Vector2(1.0f, 0.5f));
+                pb2.LineTo(100.0f*new Vector2(1.0f, 1.0f));
+                pb2.LineTo(100.0f*new Vector2(0.5f, 1.0f));
+                pb2.LineTo(100.0f*new Vector2(0.0f, 0.5f));
+            }
+            var shape2 = new Shape(pb2);
+            shape2.Mode = ShapeMode.FilledContour;
+            shape2.ContourColor = Color.WHITE;
+            shape2.ContourSize = 3.0f;
+            shape2.Transform.Pos = new Vector3(pos, 0.0f);
+            _ = world.CreateFadeIn(shape2, 0.5f);
+        }
+        var labelShape = new Text2D(label);
+        labelShape.Size = 24.0f;
+        labelShape.Color = Color.WHITE;
+        labelShape.Transform.Pos = pos + new Vector2(-20.0f, 120.0f);
+        _ = world.CreateFadeIn(labelShape, 0.5f);
+        await Time.WaitSeconds(0.5f);
+    }
+
+    await showCase(new int[] { 1, 0, 3, 2}, new Vector2(-100.0f, 350.0f), "10a (1010)");
+    await showCase(new int[] { 3, 0, 1, 2}, new Vector2(100.0f, 350.0f), "10b (1010)", invert: true);
+
+
+    await Time.WaitSeconds(1.0f);
+
+    async Task moveGrid2() {
+        float moveAmount = 2000.0f;
+        var task = Animate.Offset(gridShape2.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        foreach(var shape in shapes2) {
+            task = Animate.Offset(shape.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+        _ = Animate.Offset(exampleShape2a.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        _ = Animate.Offset(exampleShape2b.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        foreach(var cc in cornerCircles2) {
+            _ = Animate.Offset(cc.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+        _ = Animate.Offset(highlightShape2.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        for (int i = 0; i < 4; i ++) {
+            _ = Animate.Offset(mcs2Tasks[i].Result.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+
+        moveAmount = 450.0f;
+        task = Animate.Offset(gridShape1.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        foreach(var shape in shapes) {
+            task = Animate.Offset(shape.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+        _ = Animate.Offset(exampleShape.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        foreach(var cc in cornerCircles1) {
+            _ = Animate.Offset(cc.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+        _ = Animate.Offset(highlightShape1.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        for (int i = 0; i < 4; i ++) {
+            _ = Animate.Offset(mcs1Tasks[i].Result.Transform, new Vector3(moveAmount, 0.0f, 0.0f));
+        }
+
+
+        await task;
+    }
+    await moveGrid2();
+
+
+    var gridBase = new Vector2(50.0f, 0.0f);
+
+    (Vector2, Vector2, bool)[] intersections1 = new (Vector2, Vector2, bool)[] {
+        (new Vector2(50.0f, 0.0f), new Vector2(1.0f, -0.3f).Normalized, true),
+        (new Vector2(100.0f, 33.0f), new Vector2(0.0f, -1.0f).Normalized, false),
+        (new Vector2(0.0f, 80.0f), new Vector2(0.15f, 1.0f).Normalized, false),
+        (new Vector2(60.0f, 100.0f), new Vector2(-1.0f, 0.0f).Normalized, true),
+    };
+
+    var caseLinePath = new PathBuilder();
+    caseLinePath.MoveTo(new Vector2(-20.0f, 0.0f));
+    caseLinePath.LineTo(new Vector2(120.0f, 0.0f));
+    var caseLine = new Shape(caseLinePath);
+    caseLine.Mode = ShapeMode.Contour;
+    caseLine.ContourColor = 1.3f*Color.YELLOW;
+    caseLine.ContourSize = 3.0f;
+    caseLine.Transform.Pos = new Vector2(-100.0f, 330.0f);
+    caseLine.SortKey = 1;
+    world.CreateInstantly(caseLine);
     await Animate.InterpF(x => {
-        grid.Color = Color.Lerp(grid.Color, Color.TRANSPARENT, x);
-    }, 0.0f, 1.0f, 1.0f);
-    world.Destroy(grid);
+        caseLine.ContourColor = Color.Lerp(Color.TRANSPARENT, 1.3f*Color.YELLOW, x);
+    }, 0.0f, 1.0f, 0.5f);
 
-    await orbitTask;
+    List<Shape> intersectionShapes = new List<Shape>();
+    foreach (var intr in intersections1) {
+        var c = new Circle(8.0f);
+        c.Color = Color.YELLOW;
+        c.Transform.Pos = intr.Item1 + gridBase;
+        c.SortKey = 2;
+        var pb = new PathBuilder();
+        pb.MoveTo(intr.Item1);
+        pb.LineTo(intr.Item1 + 30.0f*intr.Item2);
+        var l = new Shape(pb);
+        l.Mode = ShapeMode.Contour;
+        l.ContourColor = Color.GREEN;
+        l.Transform.Pos = gridBase;
+        l.SortKey = 3;
+        l.ContourSize = 4.0f;
+        await world.CreateFadeIn(c, 0.5f);
+        await world.CreateFadeIn(l, 0.5f);
+        intersectionShapes.AddRange([c, l]);
+    }
+
     await Time.WaitSeconds(1.0f);
 
     await Animate.InterpF(x => {
-        normals.Color = Color.Lerp(normals.Color, Color.TRANSPARENT, x);
-        sphereList.ForEach(s => s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x));
+        exampleShape.Color = Color.Lerp(exampleShape.Color, Color.TRANSPARENT, x);
+        exampleShape.ContourColor = Color.Lerp(exampleShape.ContourColor, Color.TRANSPARENT, x);
     }, 0.0f, 1.0f, 1.0f);
 
-    world.Destroy(normals);
-    world.Destroy(sphereList.ToArray());*/
+    await Time.WaitSeconds(1.0f);
+
+    (int, int, Vector2)[] pairings1 = new (int, int, Vector2)[] {
+        (0, 2, new Vector2(0.71f, 0.69f)),
+        (1, 3, new Vector2(0.60f, 0.32f)),
+    };
+
+    (int, int, Vector2)[] pairings2 = new (int, int, Vector2)[] {
+        (0, 1, new Vector2(0.60f, 0.32f)),
+        (2, 3, new Vector2(0.61f, 0.71f)),
+    };
+
+    var col = new Color(0.1f, 0.4f, 1.0f, 1.0f);
+
+    _ = Animate.Color(intersectionShapes[0], Color.YELLOW, col, 1.0f);
+    await Animate.Color(intersectionShapes[4], Color.GREEN, col, 1.0f);
+
+    async Task<List<Shape>> tryExample((int, int, Vector2)[] pairings) {
+        List<Shape> garbage = new List<Shape>();
+        foreach (var (p1, p2, v) in pairings) {
+            var els = new int[] { p1, p2 };
+            Task task = Task.CompletedTask;
+            List<Shape> nws = new List<Shape>();
+            foreach (var i in els) {
+                var tpb = new PathBuilder();
+                tpb.MoveTo(intersections1[i].Item1);
+                float len = 100.0f;
+                tpb.LineTo(intersections1[i].Item1 
+                    + (!intersections1[i].Item3 ? len*intersections1[i].Item2.PerpCw : len*intersections1[i].Item2.PerpCcw));
+                var tl = new Shape(tpb);
+                tl.Mode = ShapeMode.Contour;
+                tl.ContourColor = Color.MAGENTA;
+                tl.Transform.Pos = gridBase;
+                tl.SortKey = 4;
+                tl.ContourSize = 2.0f;
+                task = world.CreateFadeIn(tl, 0.5f);
+                nws.Add(tl);
+            }
+            var intr = new Circle(8.0f);
+            intr.Color = Color.ORANGE;
+            intr.Transform.Pos = gridBase + v*100.0f;
+            intr.SortKey = 2;
+            task = world.CreateFadeIn(intr, 0.5f);
+            garbage.Add(intr);
+            await task;
+            await Time.WaitSeconds(0.5f);
+            foreach (var s in nws) {
+                world.Destroy(s);
+            }
+            var pb = new PathBuilder();
+            pb.MoveTo(intersections1[p1].Item1);
+            pb.LineTo(v*100.0f);
+            pb.LineTo(intersections1[p2].Item1);
+            var l = new Shape(pb);
+            l.Mode = ShapeMode.Contour;
+            l.ContourColor = Color.ORANGE;
+            l.Transform.Pos = gridBase;
+            l.SortKey = 3;
+            l.ContourSize = 3.0f;
+            await world.CreateFadeIn(l, 0.5f);
+            garbage.Add(l);
+        }
+
+        await Time.WaitSeconds(1.0f);
+        return garbage;
+    }
+
+    var garbage = await tryExample(pairings1);
+    await Animate.InterpF(x => {
+        foreach (var s in garbage) {
+            s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
+        }
+    }, 0.0f, 1.0f, 1.0f);
+    foreach (var s in garbage) {
+        world.Destroy(s);
+    }
 
     await Time.WaitSeconds(1.0f);
-    await orbitTask;
 
+    _ = Animate.Color(intersectionShapes[2], Color.YELLOW, col, 1.0f);
+    await Animate.Color(intersectionShapes[4], col, Color.YELLOW, 1.0f);
+
+    await Animate.Offset(caseLine.Transform, new Vector3(200.0f, 0.0f, 0.0f));
+    await Time.WaitSeconds(1.0f);
+
+    await tryExample(pairings2);
+
+    await Time.WaitSeconds(1.0f);
+
+    await Animate.Color(exampleShape, Color.TRANSPARENT, new Color(1.0f, 0.1f, 0.1f, 0.5f), 1.0f);
 }
 
 async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
@@ -1488,10 +1835,14 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
             foreach (var s in sharpSpheres) {
                 s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
             }
+            foreach (var s in cornerSpheres.SelectMany(x => x.l)) {
+                s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
+            }
         }, 0.0f, 1.0f, 1.0f);
-        //world.Destroy(quads);
+        world.Destroy(quads);
         world.Destroy(cSharpLines.ToArray());
         world.Destroy(sharpSpheres);
+        world.Destroy(cornerSpheres.SelectMany(x => x.l).ToArray());
     }
     _ = hideQuadsNStuff();
 
@@ -1601,12 +1952,15 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
 
     await Time.WaitSeconds(1.0f);
 
+    List<Sphere> sharpSphereList = new ();
+
     var solved = new Sphere();
     solved.Radius = 0.03f;
-    solved.Color = 1.5f*Color.ORANGE;
+    solved.Color = 1.5f*Color.RED;
     solved.Transform.Pos = new Vector3(0.5f, 3.5f, 0.5f) + min;
     await world.CreateFadeIn(solved, 0.5f);
-    await Animate.Color(solved, Color.ORANGE, 0.5f);
+    await Animate.Color(solved, Color.RED, 0.5f);
+    sharpSphereList.Add(solved);
 
     await Time.WaitSeconds(1.0f);
 
@@ -1701,10 +2055,11 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     var centerVert = new Vector3(0.5f, 2.5f, 1.5f);
     var centerSphere = new Sphere();
     centerSphere.Radius = 0.03f;
-    centerSphere.Color = 1.5f*Color.ORANGE;
+    centerSphere.Color = 1.5f*Color.RED;
     centerSphere.Transform.Pos = centerVert + min;
     await world.CreateFadeIn(centerSphere, 0.5f);
-    await Animate.Color(centerSphere, Color.ORANGE, 0.5f);
+    await Animate.Color(centerSphere, Color.RED, 0.5f);
+    sharpSphereList.Add(centerSphere);
 
     await Time.WaitSeconds(1.0f);
 
@@ -1794,14 +2149,16 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
 
     var sharpSp1 = new Sphere();
     sharpSp1.Radius = 0.03f;
-    sharpSp1.Color = 1.5f*Color.ORANGE;
+    sharpSp1.Color = 1.5f*Color.VIOLET;
     sharpSp1.Transform.Pos = new Vector3(0.5f, 3.5f, 1.0f) + min;
     var sharpSp2 = world.Clone(sharpSp1);
     sharpSp2.Transform.Pos = new Vector3(0.5f, 3.5f, 2.0f) + min;
     _ = world.CreateFadeIn(sharpSp1, 0.5f);
     await world.CreateFadeIn(sharpSp2, 0.5f);
-    _ = Animate.Color(sharpSp1, Color.ORANGE, 0.5f);
-    await Animate.Color(sharpSp2, Color.ORANGE, 0.5f);
+    _ = Animate.Color(sharpSp1, Color.VIOLET, 0.5f);
+    await Animate.Color(sharpSp2, Color.VIOLET, 0.5f);
+    sharpSphereList.Add(sharpSp1);
+    sharpSphereList.Add(sharpSp2);
     
     await Time.WaitSeconds(1.0f);
 
@@ -1818,14 +2175,16 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
 
     var sharpCenter1 = new Sphere();
     sharpCenter1.Radius = 0.03f;
-    sharpCenter1.Color = 1.5f*Color.ORANGE;
+    sharpCenter1.Color = 1.5f*Color.RED;
     sharpCenter1.Transform.Pos = new Vector3(0.75f, 3.5f, 1.5f) + min;
     var sharpCenter2 = world.Clone(sharpCenter1);
     sharpCenter2.Transform.Pos = new Vector3(0.5f, 3.25f, 1.5f) + min;
     _ = world.CreateFadeIn(sharpCenter1, 0.5f);
     await world.CreateFadeIn(sharpCenter2, 0.5f);
-    _ = Animate.Color(sharpCenter1, Color.ORANGE, 0.5f);
-    await Animate.Color(sharpCenter2, Color.ORANGE, 0.5f);
+    _ = Animate.Color(sharpCenter1, Color.RED, 0.5f);
+    await Animate.Color(sharpCenter2, Color.RED, 0.5f);
+    sharpSphereList.Add(sharpCenter1);
+    sharpSphereList.Add(sharpCenter2);
 
     await Time.WaitSeconds(1.0f);
 
@@ -1880,6 +2239,13 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
             fanMesh31.Outline = Color.Lerp(fanMesh31.Outline, Color.TRANSPARENT, x);
             fanMesh32.Color = Color.Lerp(fanMesh32.Color, Color.TRANSPARENT, x);
             fanMesh32.Outline = Color.Lerp(fanMesh32.Outline, Color.TRANSPARENT, x);
+            fanMesh2.Color = Color.Lerp(fanMesh2.Color, Color.TRANSPARENT, x);
+            fanMesh2.Outline = Color.Lerp(fanMesh2.Outline, Color.TRANSPARENT, x);
+            solved.Color = Color.Lerp(solved.Color, Color.TRANSPARENT, x);
+            mesh.Color = Color.Lerp(mesh.Color, Color.TRANSPARENT, x);
+            foreach (var s in sharpSphereList) {
+                s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
+            }
         }, 0.0f, 1.0f, 1.0f);
         world.Destroy(blueLine);
         world.Destroy(cornerLines);
@@ -1888,6 +2254,10 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         world.Destroy(cornerLines2);
         world.Destroy(fanMesh31);
         world.Destroy(fanMesh32);
+        world.Destroy(fanMesh2);
+        world.Destroy(solved);
+        world.Destroy(mesh);
+        world.Destroy(sharpSphereList.ToArray());
     }
     _ = createMesh();
 
@@ -1897,6 +2267,14 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         cam.Transform.Pos = Vector3.Lerp(targetPosition, camOrigPos, x);
     }, 0.0f, 1.0f, 1.0f);
     await Animate.OrbitAndLookAt(cam.Transform, Vector3.UP, Vector3.ZERO, 360.0f, 5.0f);
+
+    // hide all
+    _ = hideGrid(true);
+    await Animate.InterpF(x => {
+        wholeMesh.Color = Color.Lerp(wholeMesh.Color, Color.TRANSPARENT, x);
+        wholeMesh.Outline = Color.Lerp(wholeMesh.Outline, Color.TRANSPARENT, x);
+    }, 0.0f, 1.0f, 1.0f);
+    world.Destroy(wholeMesh);
 
     return grid;
 }

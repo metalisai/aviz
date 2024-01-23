@@ -573,10 +573,20 @@ public class CMSTree {
                     matrix.SetRow(i, new float[] { n.x, n.y, n.z });
                     vector[i] = Vector3.Dot(nonZeroNormals[i].Value.Item1, nonZeroNormals[i].Value.Item2);
                 }
-                //matrix = matrix.Transpose();
+
+                float maxNormalDot = 0.0f;
+                for (int i = 0; i < nonZeroCount; i++) {
+                    for (int j = i + 1; j < nonZeroCount; j++) {
+                        maxNormalDot = Math.Max(maxNormalDot, Math.Abs(Vector3.Dot(nonZeroNormals[i].Value.Item1, nonZeroNormals[j].Value.Item1)));
+                    }
+                }
 
                 Vector3 componentCenter;
                 try {
+                    if (maxNormalDot > 0.9f) {
+                        throw new Exception("normal dot too large");
+                    }
+
                     if (forceFlat) {
                         throw new Exception("force flat");
                     }
@@ -591,11 +601,6 @@ public class CMSTree {
                     }
                     if (cell.Contains(p)) {
                         componentCenter = p;
-                        var sphere = new Sphere();
-                        sphere.Radius = 0.03f + random.NextSingle()*0.01f;
-                        sphere.Transform.Pos = p;
-                        sphere.Color = Color.ORANGE.WithA(0.8f);
-                        //World.current.CreateInstantly(sphere);
                     } else {
                         throw new Exception("not in cell");
                     }
