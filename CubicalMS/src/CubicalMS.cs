@@ -1052,11 +1052,131 @@ public async Task Animation(World world, Animator animator) {
     await Time.WaitSeconds(1.0f);
     await orbitTask;
 
-    await AnimateAmbiguous();
+    await AnimateAmbiguous2D();
 
+    await AnimateAmbiguous3D();
 }
 
-async Task AnimateAmbiguous() {
+async Task AnimateAmbiguous3D() {
+    var allEntities = world.BeginCapture();
+
+    var cam = world.ActiveCamera;
+    cam.Transform.Pos = new Vector3(0.0f, 0.0f, -5.0f);
+    cam.Transform.Rot = Quaternion.LookRotation(Vector3.FORWARD, Vector3.UP);
+
+    var orbitTask = Animate.OrbitAndLookAt(cam.Transform, Vector3.UP, Vector3.ZERO, 720.0f, 20.0f);
+
+    var offset1 = new Vector3(-1.5f, -0.5f, -0.5f); 
+    var offset2 = new Vector3(1.5f, -0.5f, -0.5f); 
+    // create 8 cube corners
+    for (int i = 0; i < 8; i++) {
+        var pos = CMS.cornerOffsets[i];
+        var s = new Sphere();
+        s.Radius = 0.05f;
+        s.Color = (i == 0 || i == 6) ? new Color(0.5f, 0.5f, 0.5f, 1.0f) :Color.BLACK;
+        s.Transform.Pos = pos + offset1;
+        var s2 = world.Clone(s);
+        s2.Transform.Pos = pos + offset2;
+        world.CreateInstantly(s);
+        world.CreateInstantly(s2);
+    }
+
+    var exampleMesh1a = new Mesh();
+    exampleMesh1a.Color = new Color(1.0f, 0.05f, 0.05f, 1.0f);
+    exampleMesh1a.Outline = Color.BLACK;
+    exampleMesh1a.Transform.Pos = offset1;
+    exampleMesh1a.Vertices = new Vector3[] {
+        (0.56f, -0.58f, -0.35f),
+        (0.1f, 0.6f, 0.1f),
+        (0.2f, -0.5f, 0.6f),
+        (0.2f, 0.2f, 0.3f),
+        (-0.5f, 0.5f, 0.1f),
+        (-1.0f, -0.5f, 0.55f), 
+        (0.0f, -0.5f, -0.58f),
+        (-1.0f, -0.5f, -0.53f), 
+    };
+    exampleMesh1a.Indices = new uint[] { 
+        0, 3, 1,
+        1, 3, 2,
+        2, 3, 0,
+        1, 4, 5,
+        1, 5, 2,
+        1, 4, 7,
+        1, 7, 6,
+        1, 6, 0,
+        6, 2, 0,
+        6, 7, 2,
+        7, 2, 5,
+        7, 5, 4,
+    };
+    world.CreateInstantly(exampleMesh1a);
+    var exampleMesh1b = world.Clone(exampleMesh1a);
+    exampleMesh1b.Transform.Pos = offset1 + new Vector3(1.0f, 1.0f, 1.0f);
+    var rot = Quaternion.AngleAxis(MathF.PI, Vector3.FORWARD);
+    rot = rot * Quaternion.AngleAxis(MathF.PI, Vector3.UP);
+    exampleMesh1b.Transform.Rot = rot;
+    world.CreateInstantly(exampleMesh1b);
+
+    var exampleMesh2 = new Mesh();
+    exampleMesh2.Color = new Color(1.0f, 0.05f, 0.05f, 1.0f);
+    exampleMesh2.Outline = Color.BLACK;
+    exampleMesh2.Transform.Pos = offset2;
+    exampleMesh2.Vertices = new Vector3[] {
+        (0.55f, 0.2f, 0.15f),
+        (0.1f, 0.6f, 0.1f),
+        (0.034f, 0.07f, 0.62f),
+
+        (0.45f, 1.1f, 1.27f),
+        (0.95f, 0.4f, 0.70f),
+        (0.7f, 1.15f, 0.6f),
+
+        (0.5f, 0.0f, 0.0f) - new Vector3(0.5f) - new Vector3(0.25f, -0.25f, -0.25f),
+        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.25f, -0.25f, -0.25f),
+    };
+    exampleMesh2.Indices = new uint[] { 
+        0, 1, 5,
+        0, 5, 4,
+        1, 5, 3,
+        1, 3, 2,
+        0, 2, 4,
+        2, 4, 3,
+
+        0, 1, 6,
+        0, 2, 6,
+        1, 2, 6,
+
+        3, 4, 7,
+        3, 5, 7,
+        4, 5, 7,
+    };
+    world.CreateInstantly(exampleMesh2);
+
+    var cubeLines = new Line3D();
+    cubeLines.Color = Color.BLACK;
+    cubeLines.Width = 2.0f;
+    Vector3[] vs = new Vector3[24];
+    for (int i = 0; i < 12; i++) {
+        var (c1, c2) = CMS.cubeEdgeCorners[i];
+        vs[2*i] = CMS.cornerOffsets[c1];
+        vs[2*i+1] = CMS.cornerOffsets[c2];
+    }
+    cubeLines.Vertices = vs;
+    cubeLines.Transform.Pos = offset1;
+    cubeLines.Color = Color.WHITE;
+    var cubeLines2 = world.Clone(cubeLines);
+    cubeLines2.Transform.Pos = offset2;
+    world.CreateInstantly(cubeLines);
+    world.CreateInstantly(cubeLines2);
+
+    await Time.WaitSeconds(1.0f);
+    world.EndCapture();
+
+    await orbitTask;
+}
+
+async Task AnimateAmbiguous2D() {
+    var allEntities = world.BeginCapture();
+
     var gridPath1 = new PathBuilder();
     gridPath1.Grid(100.0f, new Vector2(-700.0f, -300.0f), new Vector2(-100.0f, 300.0f));
     var gridPath2 = new PathBuilder();
@@ -1435,6 +1555,26 @@ async Task AnimateAmbiguous() {
     await Time.WaitSeconds(1.0f);
 
     await Animate.Color(exampleShape, Color.TRANSPARENT, new Color(1.0f, 0.1f, 0.1f, 0.5f), 1.0f);
+
+    await Time.WaitSeconds(2.0f);
+
+    world.EndCapture();
+
+    List<Task> tasks = new List<Task>();
+    foreach (dynamic s in allEntities) {
+        tasks.Add( Animate.InterpF(x => {
+            s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
+            if (s is Shape shape) {
+                shape.ContourColor = Color.Lerp(s.ContourColor, Color.TRANSPARENT, x);
+            }
+        }, 0.0f, 1.0f, 1.0f));
+    }
+    await Task.WhenAll(tasks);
+    foreach (dynamic s in allEntities) {
+        if (!s.managedLifetime) {
+            world.Destroy(s);
+        }
+    }
 }
 
 async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
