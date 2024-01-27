@@ -1096,17 +1096,17 @@ async Task AnimateAmbiguous3D() {
         (-1.0f, -0.5f, -0.53f), 
     };
     exampleMesh1a.Indices = new uint[] { 
-        0, 3, 1,
+        3, 0, 1,
         1, 3, 2,
         2, 3, 0,
         1, 4, 5,
         1, 5, 2,
         1, 4, 7,
-        1, 7, 6,
+        7, 1, 6,
         1, 6, 0,
         6, 2, 0,
         6, 7, 2,
-        7, 2, 5,
+        7, 5, 2,
         7, 5, 4,
     };
     world.CreateInstantly(exampleMesh1a);
@@ -1128,22 +1128,22 @@ async Task AnimateAmbiguous3D() {
 
         (0.45f, 1.1f, 1.27f),
         (0.95f, 0.4f, 0.70f),
-        (0.7f, 1.15f, 0.6f),
+        (0.8f, 1.15f, 0.6f),
 
-        (0.5f, 0.0f, 0.0f) - new Vector3(0.5f) - new Vector3(0.25f, -0.25f, -0.25f),
-        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.25f, -0.25f, -0.25f),
+        (0.5f, 0.0f, 0.0f) - new Vector3(0.5f) - new Vector3(0.35f, -0.25f, -0.25f),
+        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.35f, -0.25f, -0.25f),
     };
     exampleMesh2.Indices = new uint[] { 
-        0, 1, 5,
+        0, 5, 1,
         0, 5, 4,
-        1, 5, 3,
+        1, 3, 5,
         1, 3, 2,
         0, 2, 4,
         2, 4, 3,
 
-        0, 1, 6,
+        0, 6, 1,
         0, 2, 6,
-        1, 2, 6,
+        1, 6, 2,
 
         3, 4, 7,
         3, 5, 7,
@@ -1170,6 +1170,51 @@ async Task AnimateAmbiguous3D() {
 
     await Time.WaitSeconds(1.0f);
     world.EndCapture();
+
+    (Vector3 v, Vector3 n)[] getIntersections(Mesh imesh, Vector3 o) {
+        List<(Vector3 v, Vector3 n)> intersections = new();
+        for (int i = 0; i < imesh.Indices.Length; i+=3) {
+            Vector3 p1, p2, p3;
+            p1 = imesh.Transform.Rot * imesh.Vertices[imesh.Indices[i]] + imesh.Transform.Pos;
+            p2 = imesh.Transform.Rot * imesh.Vertices[imesh.Indices[i+1]] + imesh.Transform.Pos;
+            p3 = imesh.Transform.Rot * imesh.Vertices[imesh.Indices[i+2]] + imesh.Transform.Pos;
+
+            for (int e = 0; e < 12; e++) {
+                var start = CMS.cornerOffsets[CMS.cubeEdgeCorners[e].Item1] + imesh.Transform.Pos + o;
+                var end = CMS.cornerOffsets[CMS.cubeEdgeCorners[e].Item2] + imesh.Transform.Pos + o;
+
+                var intersection = AMath.IntersectSegmentTriangle(start, end, p1, p2, p3);
+
+                if (intersection != null) {
+                    var normal = Vector3.Cross(p2 - p1, p3 - p1).Normalized;
+                    intersections.Add((intersection.Value, normal));
+                }
+            }
+        }
+        return intersections.ToArray();
+    }
+
+    var intersections11 = getIntersections(exampleMesh1a, Vector3.ZERO);
+    var intersections12 = getIntersections(exampleMesh1b, -Vector3.ONE);
+    var intersections2 = getIntersections(exampleMesh2, Vector3.ZERO);
+
+    var allIntersections = new List<(Vector3 v, Vector3 n)>();
+    allIntersections.AddRange(intersections11);
+    allIntersections.AddRange(intersections12);
+    allIntersections.AddRange(intersections2);
+    var normalLines = new Line3D();
+    normalLines.Color = Color.GREEN;
+    normalLines.Width = 3.0f;
+    normalLines.Vertices = allIntersections.SelectMany(i => new Vector3[] { i.v, i.v + 0.3f*i.n }).ToArray();
+    world.CreateInstantly(normalLines);
+
+    foreach (var i in allIntersections) {
+        var s = new Sphere();
+        s.Radius = 0.02f;
+        s.Color = Color.YELLOW;
+        s.Transform.Pos = i.v;
+        world.CreateInstantly(s);
+    }
 
     await orbitTask;
 }
