@@ -529,7 +529,7 @@ public class CMSTree {
 
                 var unique = loop.Distinct().ToArray();
                 var sharpIndices = unique.Where(x => vertices[x].sharp).ToArray();
-                if (sharpIndices.Length == 2 
+                if (false && sharpIndices.Length == 2 
                     && !adjacencies[sharpIndices[0], sharpIndices[1]]
                     && !forceFlat
                 ) {
@@ -562,60 +562,95 @@ public class CMSTree {
                     }
                 }
 
+                Vector3 massPoint;
+                var distinctIndices = loop.Distinct().ToArray();
+                Vector3 sum = Vector3.ZERO;
+                foreach (var idx in distinctIndices) {
+                    sum += vertices[idx].v;
+                }
+                massPoint = sum * (1.0f / distinctIndices.Length);
+
                 //Debug.Log($"loop: {loop.Count}");
-                var nonZeroNormals = loop.Select(x => vertices[x].n != Vector3.ZERO ? ((Vector3, Vector3)?)(vertices[x].n, vertices[x].v) : null).OfType<(Vector3, Vector3)?>().ToArray();
+                (Vector3 n, Vector3 v)?[] nonZeroNormals = loop.Select(x => vertices[x].n != Vector3.ZERO ? ((Vector3, Vector3)?)(vertices[x].n, vertices[x].v) : null).OfType<(Vector3, Vector3)?>().ToArray();
                 int nonZeroCount = nonZeroNormals.Length;
                 var matrix = Matrix<float>.Build.Dense(nonZeroCount, 3);
                 var vector = Vector<float>.Build.Dense(nonZeroCount, 1.0f);
                 //Debug.Log($"nonZeroCount: {nonZeroCount}");
                 for (int i = 0; i < nonZeroCount; i++) {
-                    var n = nonZeroNormals[i].Value.Item1;
+                    var n = nonZeroNormals[i].Value.n;
                     matrix.SetRow(i, new float[] { n.x, n.y, n.z });
-                    vector[i] = Vector3.Dot(nonZeroNormals[i].Value.Item1, nonZeroNormals[i].Value.Item2);
+                    vector[i] = Vector3.Dot(nonZeroNormals[i].Value.n, nonZeroNormals[i].Value.v - massPoint);
                 }
 
-                float maxNormalDot = 0.0f;
+                float minNormalDot = 0.0f;
                 for (int i = 0; i < nonZeroCount; i++) {
                     for (int j = i + 1; j < nonZeroCount; j++) {
-                        maxNormalDot = Math.Max(maxNormalDot, Math.Abs(Vector3.Dot(nonZeroNormals[i].Value.Item1, nonZeroNormals[j].Value.Item1)));
+                        minNormalDot = Math.Min(minNormalDot, Math.Abs(Vector3.Dot(nonZeroNormals[i].Value.n, nonZeroNormals[j].Value.n)));
                     }
                 }
 
-                Vector3 componentCenter;
                 try {
-                    if (maxNormalDot > 0.9f) {
-                        throw new Exception("normal dot too large");
+                    if (minNormalDot > 0.9f) {
+                        throw new Exception("min normal dot too large");
                     }
 
                     if (forceFlat) {
                         throw new Exception("force flat");
                     }
-                    var pseudoInverse = matrix.PseudoInverse();
+                    //var pseudoInverse = matrix.PseudoInverse();
+                    var svd = matrix.Svd(true);
+
+                    // NOTE: the "Feature Sensitive Surface Extraction from Volume Data" paper referenced by the CMS paper
+                    // sets the smallest singular value to 0, but this causes problems with stuff like cube corner tips
+                    // setting a singular value to 0 causes loss of information
+                    // however it does seem to make it more robust
+                    /*
+                    var singularValues = svd.S.ToArray();
+                    int minIdx = 0;
+                    float minSingularValue = singularValues[0]*singularValues[0];
+                    for (int i = 1; i < singularValues.Length; i++) {
+                        if (singularValues[i]*singularValues[i] < minSingularValue) {
+                            minSingularValue = singularValues[i]*singularValues[i];
+                            minIdx = i;
+                        }
+                    }
+                    svd.S[minIdx] = 0.0f;
+                    */
+
+                    // calculate pseudo inverse
+                    var mw = svd.W;
+                    var ms = svd.S;
+                    float tolerance = (float)(Math.Max(matrix.RowCount, matrix.ColumnCount) * svd.L2Norm * MathNet.Numerics.Precision.SinglePrecision);
+                    for (int i = 0; i < ms.Count; i++)
+                    {
+                        ms[i] = MathF.Abs(ms[i]) < float.Epsilon ? 0 : 1/ms[i];
+                    }
+                    mw.SetDiagonal(ms);
+
+                    var pseudoInverse = (svd.U * (mw * svd.VT)).Transpose();
+
                     var result = pseudoInverse * vector;
-                    var p = new Vector3(result[0], result[1], result[2]);
+                    var p = new Vector3(result[0], result[1], result[2]) + massPoint;
                     var residual = matrix * result - vector;
                     var residualNorm = residual.L2Norm();
 
                     if (residualNorm > 1e-4) {
-                        throw new Exception("residual too large");
+                        //throw new Exception("residual too large");
                     }
-                    if (cell.Contains(p)) {
-                        componentCenter = p;
-                    } else {
+
+                    if (!cell.Contains(p)) {
+                        Debug.Warning($"Not in cell {p}");
                         throw new Exception("not in cell");
                     }
                     //Debug.Log($"p: {p}");
-                } catch (Exception) {
-                    Vector3 sum = Vector3.ZERO;
-                    var distinctIndices = loop.Distinct().ToArray();
-                    foreach (var idx in distinctIndices) {
-                        sum += vertices[idx].v;
-                    }
-                    componentCenter = sum * (1.0f / distinctIndices.Length);
+
+                    massPoint = p;
+                } catch (Exception e) {
+                    Debug.TLog($"Exception: {e.Message} {e.StackTrace}");
                     if (!firstLoop) {
                         var sphere = new Sphere();
                         sphere.Radius = 0.03f + random.NextSingle()*0.01f;
-                        sphere.Transform.Pos = componentCenter;
+                        sphere.Transform.Pos = massPoint;
                         sphere.Color = 1.5f*Color.ORANGE;
                         World.current.CreateInstantly(sphere);
                     }
@@ -623,7 +658,7 @@ public class CMSTree {
                 int offset = retVertices.Count;
                 retVertices.AddRange(loop.Select(x => vertices[x].v));
                 int centerIdx = retVertices.Count;
-                retVertices.Add(componentCenter);
+                retVertices.Add(massPoint);
                 for (int i = 0; i < loop.Count; i++) {
                     retIndices.Add(offset + i);
                     retIndices.Add(centerIdx);

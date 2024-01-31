@@ -4,6 +4,7 @@ using AnimLib;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using CommunityToolkit.HighPerformance;
+using MathNet.Numerics.LinearAlgebra;
 
 public class CubicalMS : AnimationBehaviour
 {
@@ -1066,8 +1067,8 @@ async Task AnimateAmbiguous3D() {
 
     var orbitTask = Animate.OrbitAndLookAt(cam.Transform, Vector3.UP, Vector3.ZERO, 720.0f, 20.0f);
 
-    var offset1 = new Vector3(-1.5f, -0.5f, -0.5f); 
-    var offset2 = new Vector3(1.5f, -0.5f, -0.5f); 
+    var offset1 = new Vector3(0.5f, -0.5f, -0.5f); 
+    var offset2 = new Vector3(-1.5f, -0.5f, -0.5f); 
     // create 8 cube corners
     for (int i = 0; i < 8; i++) {
         var pos = CMS.cornerOffsets[i];
@@ -1087,13 +1088,13 @@ async Task AnimateAmbiguous3D() {
     exampleMesh1a.Transform.Pos = offset1;
     exampleMesh1a.Vertices = new Vector3[] {
         (0.56f, -0.58f, -0.35f),
-        (0.1f, 0.6f, 0.1f),
+        (0.1f, 0.5f, 0.2f),
         (0.2f, -0.5f, 0.6f),
         (0.2f, 0.2f, 0.3f),
         (-0.5f, 0.5f, 0.1f),
-        (-1.0f, -0.5f, 0.55f), 
+        (-0.6f, -0.5f, 0.55f), 
         (0.0f, -0.5f, -0.58f),
-        (-1.0f, -0.5f, -0.53f), 
+        (-0.6f, -0.5f, -0.53f), 
     };
     exampleMesh1a.Indices = new uint[] { 
         3, 0, 1,
@@ -1122,16 +1123,22 @@ async Task AnimateAmbiguous3D() {
     exampleMesh2.Outline = Color.BLACK;
     exampleMesh2.Transform.Pos = offset2;
     exampleMesh2.Vertices = new Vector3[] {
-        (0.55f, 0.2f, 0.15f),
-        (0.1f, 0.6f, 0.1f),
-        (0.034f, 0.07f, 0.62f),
+        (0.55f, 0.1f, 0.15f),
+        (0.1f, 0.4f, 0.1f),
+        (0.034f, 0.07f, 0.32f),
 
-        (0.45f, 1.1f, 1.27f),
+        (0.60f, 0.7f, 1.01f),
         (0.95f, 0.4f, 0.70f),
-        (0.8f, 1.15f, 0.6f),
+        (0.8f, 0.85f, 0.6f),
 
-        (0.5f, 0.0f, 0.0f) - new Vector3(0.5f) - new Vector3(0.35f, -0.25f, -0.25f),
-        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.35f, -0.25f, -0.25f),
+        (0.5f, -0.05f, 0.0f) - new Vector3(0.5f) - new Vector3(-0.35f, -0.25f, -0.15f),
+        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.35f, -0.05f, -0.75f),
+
+        (0.5f, -0.05f, 0.0f) - new Vector3(0.5f) - new Vector3(0.15f, -1.05f, 0.05f),
+        (0.5f, -0.05f, 0.0f) - new Vector3(0.5f) - new Vector3(0.35f, -0.5f, -0.85f),
+
+        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(-0.25f, -0.45f, 0.25f),
+        (0.5f, 1.0f, 1.0f) + new Vector3(0.5f) + new Vector3(0.35f, -0.85f, -0.25f),
     };
     exampleMesh2.Indices = new uint[] { 
         0, 5, 1,
@@ -1142,12 +1149,21 @@ async Task AnimateAmbiguous3D() {
         2, 4, 3,
 
         0, 6, 1,
-        0, 2, 6,
-        1, 6, 2,
+        1, 6, 8,
+        2, 1, 8,
+        2, 8, 9,
+        2, 6, 0,
+        9, 6, 2,
 
-        3, 4, 7,
-        3, 5, 7,
-        4, 5, 7,
+        3, 7, 5,
+        3, 10, 7,
+        5, 7, 4,
+        4, 7, 11,
+        3, 4, 11,
+        3, 11, 10,
+
+        6, 9, 8,
+        10, 11, 7,
     };
     world.CreateInstantly(exampleMesh2);
 
@@ -1167,9 +1183,6 @@ async Task AnimateAmbiguous3D() {
     cubeLines2.Transform.Pos = offset2;
     world.CreateInstantly(cubeLines);
     world.CreateInstantly(cubeLines2);
-
-    await Time.WaitSeconds(1.0f);
-    world.EndCapture();
 
     (Vector3 v, Vector3 n)[] getIntersections(Mesh imesh, Vector3 o) {
         List<(Vector3 v, Vector3 n)> intersections = new();
@@ -1196,6 +1209,7 @@ async Task AnimateAmbiguous3D() {
 
     var intersections11 = getIntersections(exampleMesh1a, Vector3.ZERO);
     var intersections12 = getIntersections(exampleMesh1b, -Vector3.ONE);
+    // [ 1, 2, 3] are the first triangle
     var intersections2 = getIntersections(exampleMesh2, Vector3.ZERO);
 
     var allIntersections = new List<(Vector3 v, Vector3 n)>();
@@ -1208,15 +1222,148 @@ async Task AnimateAmbiguous3D() {
     normalLines.Vertices = allIntersections.SelectMany(i => new Vector3[] { i.v, i.v + 0.3f*i.n }).ToArray();
     world.CreateInstantly(normalLines);
 
-    foreach (var i in allIntersections) {
+    var intersections21 = intersections2.Where(x => (x.v - exampleMesh2.Transform.Pos).z < 0.5f).ToArray();
+    var intersections22 = intersections2.Where(x => (x.v - exampleMesh2.Transform.Pos).z > 0.5f).ToArray();
+
+    Vector3 calcPoint((Vector3 v, Vector3 n)[] intersections) {
+        var matrix = Matrix<float>.Build.Dense(intersections.Length, 3);
+        var b = Vector<float>.Build.Dense(intersections.Length);
+        for (int i = 0; i < intersections.Length; i++) {
+            var n = intersections[i].n;
+            matrix.SetRow(i, (float[]) [ n.x, n.y, n.z ]);
+            b[i] = Vector3.Dot(n, intersections[i].v);
+        }
+        var pinv = matrix.PseudoInverse();
+        var res = pinv * b;
+        return new Vector3(res[0], res[1], res[2]);
+    }
+    var sharp11 = calcPoint(intersections11);
+    var sharp12 = calcPoint(intersections12);
+    var sharp21 = calcPoint(intersections21);
+    var sharp22 = calcPoint(intersections22);
+
+    Debug.Log($"sharp11: {sharp11}");
+    Debug.Log($"sharp12: {sharp12}");
+    Debug.Log($"sharp21: {sharp21}");
+    Debug.Log($"sharp22: {sharp22}");
+
+    await Time.WaitSeconds(6.0f);
+
+    // fade out meshes  
+    await Animate.InterpF(x => {
+        exampleMesh1a.Color = Color.Lerp(exampleMesh1a.Color, exampleMesh1a.Color.WithA(0.1f), x);
+        exampleMesh1a.Outline = Color.Lerp(exampleMesh1a.Outline, exampleMesh1a.Outline.WithA(0.5f), x);
+        exampleMesh1b.Color = Color.Lerp(exampleMesh1b.Color, exampleMesh1b.Color.WithA(0.1f), x);
+        exampleMesh1b.Outline = Color.Lerp(exampleMesh1b.Outline, exampleMesh1b.Outline.WithA(0.5f), x);
+        exampleMesh2.Color = Color.Lerp(exampleMesh2.Color, exampleMesh2.Color.WithA(0.1f), x);
+        exampleMesh2.Outline = Color.Lerp(exampleMesh2.Outline, exampleMesh2.Outline.WithA(0.5f), x);
+    }, 0.0f, 1.0f, 0.5f);
+
+    // connect triangle vertices
+    var triangleLines = new Line3D();
+    triangleLines.Color = Color.YELLOW;
+    triangleLines.Width = 4.0f;
+    triangleLines.Vertices = new Vector3[] {
+        intersections2[0].v,
+        intersections2[1].v,
+        intersections2[1].v,
+        intersections2[2].v,
+        intersections2[2].v,
+        intersections2[0].v,
+
+        intersections2[3].v,
+        intersections2[4].v,
+        intersections2[4].v,
+        intersections2[5].v,
+        intersections2[5].v,
+        intersections2[3].v,
+
+        intersections11[0].v,
+        intersections11[1].v,
+        intersections11[1].v,
+        intersections11[2].v,
+        intersections11[2].v,
+        intersections11[0].v,
+
+        intersections12[0].v,
+        intersections12[1].v,
+        intersections12[1].v,
+        intersections12[2].v,
+        intersections12[2].v,
+        intersections12[0].v,
+    };
+    await world.CreateFadeIn(triangleLines, 0.5f);
+
+    await Time.WaitSeconds(1.0f);
+
+    Vector3[] sharpFeatures = [ sharp11, sharp12, sharp21, sharp22 ];
+    foreach (var sf in sharpFeatures) {
         var s = new Sphere();
         s.Radius = 0.02f;
-        s.Color = Color.YELLOW;
-        s.Transform.Pos = i.v;
-        world.CreateInstantly(s);
+        s.Color = 1.5f*Color.RED;
+        s.Transform.Pos = sf;
+        async Task fade() {
+            await world.CreateFadeIn(s, 0.5f);
+            await Animate.InterpF(x => {
+                s.Color = Color.Lerp(1.5f*Color.RED, Color.RED, x);
+            }, 0.0f, 1.0f, 0.5f);
+        }
+        _ = fade(); 
     }
 
+    var recFan11 = new Mesh();
+    recFan11.Color = Color.ORANGE;
+    recFan11.Outline = Color.BLACK;
+    recFan11.Vertices = new Vector3[] {
+        intersections11[0].v,
+        intersections11[1].v,
+        intersections11[2].v,
+        sharp11,
+    };
+    recFan11.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
+
+    var recFan12 = new Mesh();
+    recFan12.Color = Color.ORANGE;
+    recFan12.Outline = Color.BLACK;
+    recFan12.Vertices = new Vector3[] {
+        intersections12[0].v,
+        intersections12[1].v,
+        intersections12[2].v,
+        sharp12,
+    };
+    recFan12.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
+
+    var recFan21 = new Mesh();
+    recFan21.Color = Color.ORANGE;
+    recFan21.Outline = Color.BLACK;
+    recFan21.Vertices = new Vector3[] {
+        intersections21[0].v,
+        intersections21[1].v,
+        intersections21[2].v,
+        sharp21,
+    };
+    recFan21.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
+
+    var recFan22 = new Mesh();
+    recFan22.Color = Color.ORANGE;
+    recFan22.Outline = Color.BLACK;
+    recFan22.Vertices = new Vector3[] {
+        intersections22[0].v,
+        intersections22[1].v,
+        intersections22[2].v,
+        sharp22,
+    };
+    recFan22.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
+
+    world.CreateInstantly(recFan11);
+    world.CreateInstantly(recFan12);
+    world.CreateInstantly(recFan21);
+    world.CreateInstantly(recFan22);
+
     await orbitTask;
+
+
+    world.EndCapture();
 }
 
 async Task AnimateAmbiguous2D() {
@@ -2332,65 +2479,42 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         }
     }, 0.0f, 1.0f, 1.0f);
 
-    var sharpSp1 = new Sphere();
-    sharpSp1.Radius = 0.03f;
-    sharpSp1.Color = 1.5f*Color.VIOLET;
-    sharpSp1.Transform.Pos = new Vector3(0.5f, 3.5f, 1.0f) + min;
-    var sharpSp2 = world.Clone(sharpSp1);
-    sharpSp2.Transform.Pos = new Vector3(0.5f, 3.5f, 2.0f) + min;
-    _ = world.CreateFadeIn(sharpSp1, 0.5f);
-    await world.CreateFadeIn(sharpSp2, 0.5f);
-    _ = Animate.Color(sharpSp1, Color.VIOLET, 0.5f);
-    await Animate.Color(sharpSp2, Color.VIOLET, 0.5f);
-    sharpSphereList.Add(sharpSp1);
-    sharpSphereList.Add(sharpSp2);
-    
     await Time.WaitSeconds(1.0f);
 
-    var blueLine = new Line3D();
-    blueLine.Color = Color.BLUE;
-    blueLine.Width = 4.0f;
-    blueLine.Vertices = new Vector3[] {
-        new Vector3(0.5f, 3.5f, 1.0f) + min + new Vector3(0.002f),
-        new Vector3(0.5f, 3.5f, 2.0f) + min + new Vector3(0.002f),
-    };
-    _ = world.CreateFadeIn(blueLine, 0.5f);
-    await Time.WaitSeconds(1.0f);
-    await Animate.Color(blueLine, Color.YELLOW, 0.5f);
-
-    var sharpCenter1 = new Sphere();
-    sharpCenter1.Radius = 0.03f;
-    sharpCenter1.Color = 1.5f*Color.RED;
-    sharpCenter1.Transform.Pos = new Vector3(0.75f, 3.5f, 1.5f) + min;
-    var sharpCenter2 = world.Clone(sharpCenter1);
-    sharpCenter2.Transform.Pos = new Vector3(0.5f, 3.25f, 1.5f) + min;
-    _ = world.CreateFadeIn(sharpCenter1, 0.5f);
-    await world.CreateFadeIn(sharpCenter2, 0.5f);
-    _ = Animate.Color(sharpCenter1, Color.RED, 0.5f);
-    await Animate.Color(sharpCenter2, Color.RED, 0.5f);
-    sharpSphereList.Add(sharpCenter1);
-    sharpSphereList.Add(sharpCenter2);
+    var sharpCenter = new Sphere();
+    sharpCenter.Radius = 0.03f;
+    sharpCenter.Color = 1.5f*Color.RED;
+    sharpCenter.Transform.Pos = new Vector3(0.5f, 3.5f, 1.5f) + min;
+    _ = world.CreateFadeIn(sharpCenter, 0.5f);
+    _ = Animate.Color(sharpCenter, Color.RED, 0.5f);
+    sharpSphereList.Add(sharpCenter);
 
     await Time.WaitSeconds(1.0f);
 
-    Mesh fanMesh31 = new Mesh();
+    Mesh fanMesh3 = new Mesh();
     fanV.Clear();
     fanI.Clear();
     fanV.Add(new Vector3(0.5f, 3.0f, 1.0f) + min);
     fanV.Add(new Vector3(0.5f, 3.0f, 2.0f) + min);
     fanV.Add(new Vector3(0.5f, 3.5f, 2.0f) + min);
     fanV.Add(new Vector3(0.5f, 3.5f, 1.0f) + min);
-    fanV.Add(sharpCenter2.Transform.Pos);
-    fanI.AddRange([0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4]);
-    fanMesh31.Vertices = fanV.ToArray();
-    fanMesh31.Indices = fanI.ToArray();
-    fanMesh31.Color = Color.ORANGE;
-    fanMesh31.Outline = Color.BLACK;
-    await world.CreateFadeIn(fanMesh31, 0.5f);
+
+    fanV.Add(new Vector3(0.5f, 3.5f, 1.0f) + min);
+    fanV.Add(new Vector3(0.5f, 3.5f, 2.0f) + min);
+    fanV.Add(new Vector3(1.0f, 3.5f, 2.0f) + min);
+    fanV.Add(new Vector3(1.0f, 3.5f, 1.0f) + min);
+
+    fanV.Add(sharpCenter.Transform.Pos);
+    fanI.AddRange([0, 1, 8, 1, 2, 8, 2, 3, 8, 3, 0, 8,  4, 5, 8, 5, 6, 8, 6, 7, 8, 7, 4, 8]);
+    fanMesh3.Vertices = fanV.ToArray();
+    fanMesh3.Indices = fanI.ToArray();
+    fanMesh3.Color = Color.ORANGE;
+    fanMesh3.Outline = Color.BLACK;
+    await world.CreateFadeIn(fanMesh3, 0.5f);
 
     await Time.WaitSeconds(1.0f);
 
-    var fanMesh32 = world.Clone(fanMesh31);
+    /*var fanMesh32 = world.Clone(fanMesh31);
     fanV.Clear();
     fanI.Clear();
     fanV.Add(new Vector3(0.5f, 3.5f, 1.0f) + min);
@@ -2405,7 +2529,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     fanMesh32.Outline = Color.BLACK;
     await world.CreateFadeIn(fanMesh32, 0.5f);
 
-    await Time.WaitSeconds(1.0f);
+    await Time.WaitSeconds(1.0f);*/
 
     var wholeMesh = DoCMS2(tinyCube, tinyCubeNormal, nmax: 0);
     wholeMesh.Color = Color.ORANGE;
@@ -2416,14 +2540,13 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
             foreach(var cl in cornerLines2) {
                 cl.Color = Color.Lerp(cl.Color, Color.TRANSPARENT, x);
             }
-            blueLine.Color = Color.Lerp(blueLine.Color, Color.TRANSPARENT, x);
             cornerLines.Color = Color.Lerp(cornerLines.Color, Color.TRANSPARENT, x);
             cornerContour.Color = Color.Lerp(cornerContour.Color, Color.TRANSPARENT, x);
             cornerContour2.Color = Color.Lerp(cornerContour2.Color, Color.TRANSPARENT, x);
-            fanMesh31.Color = Color.Lerp(fanMesh31.Color, Color.TRANSPARENT, x);
+            /*fanMesh31.Color = Color.Lerp(fanMesh31.Color, Color.TRANSPARENT, x);
             fanMesh31.Outline = Color.Lerp(fanMesh31.Outline, Color.TRANSPARENT, x);
             fanMesh32.Color = Color.Lerp(fanMesh32.Color, Color.TRANSPARENT, x);
-            fanMesh32.Outline = Color.Lerp(fanMesh32.Outline, Color.TRANSPARENT, x);
+            fanMesh32.Outline = Color.Lerp(fanMesh32.Outline, Color.TRANSPARENT, x);*/
             fanMesh2.Color = Color.Lerp(fanMesh2.Color, Color.TRANSPARENT, x);
             fanMesh2.Outline = Color.Lerp(fanMesh2.Outline, Color.TRANSPARENT, x);
             solved.Color = Color.Lerp(solved.Color, Color.TRANSPARENT, x);
@@ -2432,13 +2555,12 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
                 s.Color = Color.Lerp(s.Color, Color.TRANSPARENT, x);
             }
         }, 0.0f, 1.0f, 1.0f);
-        world.Destroy(blueLine);
         world.Destroy(cornerLines);
         world.Destroy(cornerContour);
         world.Destroy(cornerContour2);
         world.Destroy(cornerLines2);
-        world.Destroy(fanMesh31);
-        world.Destroy(fanMesh32);
+        world.Destroy(fanMesh3);
+        //world.Destroy(fanMesh32);
         world.Destroy(fanMesh2);
         world.Destroy(solved);
         world.Destroy(mesh);
