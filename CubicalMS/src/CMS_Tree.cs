@@ -104,7 +104,8 @@ public class CMSCell {
             edgeIntersections[edge] = getEdgeIntersections(edge, getIntersections);
         }
 
-        if (HasEdgeAmbiguity(edgeIntersections) || LikelyToContainComplexSurface(edgeIntersections)) {
+        var allIntersections = edgeIntersections.SelectMany(x => x).ToArray();
+        if (HasEdgeAmbiguity(edgeIntersections) || LikelyToContainComplexSurface(allIntersections)) {
             Subdivide();
             foreach (var child in children) {
                 child.SubdivideCell(getIntersections, maxDepth, depth + 1);
@@ -124,8 +125,7 @@ public class CMSCell {
         return foundAmbiguousEdge;
     }
 
-    public bool LikelyToContainComplexSurface(HermiteIntersection[][] edgeIntersections) {
-        var allIntersections = edgeIntersections.SelectMany(x => x).ToArray();
+    public static bool LikelyToContainComplexSurface(HermiteIntersection[] allIntersections) {
         if (allIntersections.Length < 2) return false;
         float max = 0.0f;
         for (int i = 0; i < allIntersections.Length; i++) {
@@ -368,6 +368,7 @@ public class CMSTree {
         root.children[5].children[2].Subdivide();
     }
 
+    // n0 - number leaf cells in each dimension
     public void Init(int n0, float size0, Vector3 offset, Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections, int nmax = 1) {
         float cellSize = size0 / n0;
 
@@ -416,9 +417,8 @@ public class CMSTree {
                     node.intersectionNormal = nsum.Normalized;
                     node.intersectionT = tsum / intersections.Length;
 
-                    var sphere = new Sphere();
-                    sphere.Radius = 0.01f;
-                    sphere.Transform.Pos = intersections[0].pos;
+                    var sphere = new Sphere(0.01f);
+                    sphere.Position = intersections[0].pos;
                     sphere.Color = (1.3f*Color.RED);
                     //World.current.CreateInstantly(sphere);
 
@@ -519,14 +519,15 @@ public class CMSTree {
                     var color = Color.Random().WithA(0.8f);
                     Debug.Warning($"multiple loops not supported yet {cell.GetHashCode()}");
                     foreach (var idx in loop) {
-                        var sphere = new Sphere();
-                        sphere.Radius = 0.03f + random.NextSingle()*0.01f;
-                        sphere.Transform.Pos = vertices[idx].v;
+                        var sphere = new Sphere(0.03f + random.NextSingle()*0.01f);
+                        sphere.Position = vertices[idx].v;
                         sphere.Color = color;
                         World.current.CreateInstantly(sphere);
                     }
                 }
 
+                // TODO: I think this is not needed??
+                /*
                 var unique = loop.Distinct().ToArray();
                 var sharpIndices = unique.Where(x => vertices[x].sharp).ToArray();
                 if (false && sharpIndices.Length == 2 
@@ -561,6 +562,7 @@ public class CMSTree {
                         Debug.Warning("Tried to cut sharp feature, but the cut was too small.");
                     }
                 }
+                */
 
                 Vector3 massPoint;
                 var distinctIndices = loop.Distinct().ToArray();
@@ -594,33 +596,15 @@ public class CMSTree {
                         throw new Exception("min normal dot too large");
                     }
 
-                    if (forceFlat) {
+                    /*if (forceFlat) {
                         throw new Exception("force flat");
-                    }
+                    }*/
                     //var pseudoInverse = matrix.PseudoInverse();
                     var svd = matrix.Svd(true);
-
-                    // NOTE: the "Feature Sensitive Surface Extraction from Volume Data" paper referenced by the CMS paper
-                    // sets the smallest singular value to 0, but this causes problems with stuff like cube corner tips
-                    // setting a singular value to 0 causes loss of information
-                    // however it does seem to make it more robust
-                    /*
-                    var singularValues = svd.S.ToArray();
-                    int minIdx = 0;
-                    float minSingularValue = singularValues[0]*singularValues[0];
-                    for (int i = 1; i < singularValues.Length; i++) {
-                        if (singularValues[i]*singularValues[i] < minSingularValue) {
-                            minSingularValue = singularValues[i]*singularValues[i];
-                            minIdx = i;
-                        }
-                    }
-                    svd.S[minIdx] = 0.0f;
-                    */
 
                     // calculate pseudo inverse
                     var mw = svd.W;
                     var ms = svd.S;
-                    float tolerance = (float)(Math.Max(matrix.RowCount, matrix.ColumnCount) * svd.L2Norm * MathNet.Numerics.Precision.SinglePrecision);
                     for (int i = 0; i < ms.Count; i++)
                     {
                         ms[i] = MathF.Abs(ms[i]) < float.Epsilon ? 0 : 1/ms[i];
@@ -648,13 +632,74 @@ public class CMSTree {
                 } catch (Exception e) {
                     Debug.TLog($"Exception: {e.Message} {e.StackTrace}");
                     if (!firstLoop) {
-                        var sphere = new Sphere();
-                        sphere.Radius = 0.03f + random.NextSingle()*0.01f;
-                        sphere.Transform.Pos = massPoint;
+                        var sphere = new Sphere(0.03f + random.NextSingle()*0.01f);
+                        sphere.Position = massPoint;
                         sphere.Color = 1.5f*Color.ORANGE;
                         World.current.CreateInstantly(sphere);
                     }
                 }
+
+                /*if (minNormalDot > 0.9f) {
+                    Debug.TLog("min normal dot too large");
+                    if (!firstLoop) {
+                        var sphere = new Sphere(0.03f + random.NextSingle() * 0.01f);
+                        sphere.Position = massPoint;
+                        sphere.Color = 1.5f * Color.ORANGE;
+                        World.current.CreateInstantly(sphere);
+                    }
+                    return;
+                }
+
+                if (forceFlat) {
+                    Debug.TLog("force flat");
+                    if (!firstLoop) {
+                        var sphere = new Sphere(0.03f + random.NextSingle() * 0.01f);
+                        sphere.Position = massPoint;
+                        sphere.Color = 1.5f * Color.ORANGE;
+                        World.current.CreateInstantly(sphere);
+                    }
+                    return;
+                }
+
+                // Compute SVD
+                var svd = matrix.Svd(true);
+
+                // Calculate pseudo-inverse
+                var mw = svd.W;
+                var ms = svd.S;
+                for (int i = 0; i < ms.Count; i++) {
+                    ms[i] = MathF.Abs(ms[i]) < float.Epsilon ? 0 : 1 / ms[i];
+                }
+                mw.SetDiagonal(ms);
+
+                var pseudoInverse = (svd.U * (mw * svd.VT)).Transpose();
+
+                var result = pseudoInverse * vector;
+                var p = new Vector3(result[0], result[1], result[2]) + massPoint;
+                var residual = matrix * result - vector;
+                var residualNorm = residual.L2Norm();
+
+                // Optional: log large residuals
+                if (residualNorm > 1e-4) {
+                    Debug.TLog($"Warning: residual too large ({residualNorm})");
+                    // You can return early or handle as needed
+                }
+
+                if (!cell.Contains(p)) {
+                    Debug.TLog($"Not in cell {p}");
+                    if (!firstLoop) {
+                        var sphere = new Sphere(0.03f + random.NextSingle() * 0.01f);
+                        sphere.Position = massPoint;
+                        sphere.Color = 1.5f * Color.ORANGE;
+                        World.current.CreateInstantly(sphere);
+                    }
+                    return;
+                }
+
+                // All good, update massPoint
+                massPoint = p;
+                */
+
                 int offset = retVertices.Count;
                 retVertices.AddRange(loop.Select(x => vertices[x].v));
                 int centerIdx = retVertices.Count;
@@ -705,9 +750,8 @@ public class CMSTree {
                         }
                         Debug.Log(sb.ToString());
                     }
-                    var sphere = new Sphere();
-                    sphere.Radius = 0.03f + random.NextSingle()*0.01f;
-                    sphere.Transform.Pos = vertices[loop[0]].v;
+                    var sphere = new Sphere(0.03f + random.NextSingle()*0.01f);
+                    sphere.Position = vertices[loop[0]].v;
                     sphere.Color = Color.RED.WithA(0.8f);
                     World.current.CreateInstantly(sphere);
                 }
@@ -800,25 +844,6 @@ public class CMSTree {
     class FaceNode {
         public FaceNode[] children;
         public EdgeNode[] edgeTrees;
-    }
-
-    CMSFace ConstructFaceTree(CMSCell cell, int faceId, FaceNode faceNode) {
-        if (faceNode == null) return null;
-        var node = new CMSFace();
-        if (cell != null) {
-            cell.faceTrees[faceId] = node;
-        }
-        if (faceNode.children != null) {
-            node.children = new CMSFace[4];
-            for (int i = 0; i < 4; i++) {
-                var (cId1, _) = CMS.faceCells[faceId, i];
-                var child1 = (cell == null || cell.IsLeaf()) 
-                    ? null 
-                    : cell.children[cId1];
-                node.children[i] = ConstructFaceTree(child1, faceId, faceNode.children[i]);
-            }
-        }
-        return node;
     }
 
     CMSFace ConstructFaceTree(CMSCell cell1, CMSCell cell2, int faceId1, int faceId2, FaceNode faceNode) {
@@ -960,6 +985,8 @@ public class CMSTree {
 
     public void CalculateIntersections(CMSCell rootCell, Func<(Vector3 s, Vector3 e), HermiteIntersection[]> getIntersections) {
         var sw = new System.Diagnostics.Stopwatch();
+        // construct a quadtree of edges on the face between two octree cells
+        // the tree is assigned to respective face of both cell .faceTrees
         ConstructFaceTrees(rootCell);
         Debug.Log($"ConstructFaceTrees: {sw.ElapsedMilliseconds}ms");
         sw.Restart();
@@ -972,5 +999,13 @@ public class CMSTree {
         FindEdgeIntersections(rootCell, getIntersections);
         Debug.Log($"FindEdgeIntersections: {sw.ElapsedMilliseconds}ms");
         sw.Stop();
+    }
+
+    public void DebugRender() {
+        var cube = new Cube();
+        cube.Color = Color.RED.WithA(0.5f);
+        cube.Scale = new Vector3(this.root.size);
+        cube.Position = this.root.min + new Vector3(this.root.size * 0.5f);
+        World.current.CreateInstantly(cube);
     }
 }

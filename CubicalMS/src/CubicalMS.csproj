@@ -16,7 +16,7 @@
 
 <ItemGroup>
 <Reference Include="AnimLib">
-    <HintPath>/Projects/animlib/AnimLib/bin/Debug/net8.0/AnimLib.dll</HintPath>
+    <HintPath>/home/ttammear/Projects/animlib/AnimLib/bin/Debug/net8.0/AnimLib.dll</HintPath>
 </Reference>
 </ItemGroup>
 

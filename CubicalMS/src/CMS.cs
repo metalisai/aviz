@@ -46,6 +46,16 @@ public class CMS {
         (0, 1, 1),
     };
 
+    public static readonly Vector3[] faceCenters = new Vector3[] {
+        new Vector3(0.5f, 0.5f, 1.0f), // face 0
+        new Vector3(1.0f, 0.5f, 0.5f), // face 1
+        new Vector3(0.5f, 1.0f, 0.5f), // face 2
+        new Vector3(0.0f, 0.5f, 0.5f), // face 3
+        new Vector3(0.5f, 0.0f, 0.5f), // face 4
+        new Vector3(0.5f, 0.5f, 0.0f), // face 5
+    };
+
+    // map face idx to cube corners
     public static readonly int[,] faceCubeCorners = new int[,] {
         { 4, 5, 6, 7 },
         { 1, 5, 6, 2 },
@@ -55,6 +65,17 @@ public class CMS {
         { 0, 1, 2, 3 },
     };
 
+    // latest
+    public static readonly int[,] faceEdgeToCubeEdgeXX = new int[6, 4] {
+        { 0, 1, 2, 3},
+        { 4, 5, 6, 1},
+        { 2, 6, 7, 8},
+        { 9,10, 8, 3},
+        { 0, 4, 11, 9},
+        {11, 5, 7, 10}
+    };
+
+    // map face edges to cube edges
     public static readonly int[,] faceEdgeToCubeEdge = new int[6, 4] {
         { 0, 3, 2, 1},
         { 4, 5, 6, 1},
@@ -64,6 +85,7 @@ public class CMS {
         {11,10, 7, 5}
     };
 
+    // [cubeEdge, i] -> (face, quadEdge)
     public static readonly (int face, int edge)[,] cubeEdgeToFaceEdge = new (int, int)[12, 2] {
         { (0, 0), (4, 2) },
         { (0, 3), (1, 3) },
@@ -77,6 +99,21 @@ public class CMS {
         { (3, 0), (4, 1) },
         { (3, 1), (5, 1) },
         { (4, 0), (5, 0) },
+    };
+
+    public static readonly (int face, int edge)[,] cubeEdgeToFaceEdgeXX = new (int, int)[12, 2] {
+        { (0, 0), (4, 0) }, //
+        { (0, 1), (1, 3) }, //
+        { (0, 2), (2, 0) }, //
+        { (0, 3), (3, 3) }, //
+        { (1, 0), (4, 1) }, //
+        { (1, 1), (5, 1) }, //
+        { (1, 2), (2, 1) }, //
+        { (2, 2), (5, 2) }, //
+        { (2, 3), (3, 2) }, //
+        { (3, 0), (4, 3) }, //
+        { (3, 1), (5, 3) }, //
+        { (4, 2), (5, 0) }, //
     };
 
     public static readonly int[] cubeEdgeDir = new int[12] {
@@ -165,22 +202,23 @@ public class CMS {
     // the 12 internal faces of an internal octree cell
     // each face is shared by 2 cells
     public static readonly (int cell, int face)[,] internalFaceCells = new (int, int)[12, 2] {
-        { (0, 0), (4, 5) },
-        { (1, 0), (5, 5) },
-        { (2, 0), (6, 5) },
-        { (3, 0), (7, 5) },
-        { (4, 1), (5, 3) },
-        { (0, 1), (1, 3) },
-        { (3, 1), (2, 3) },
-        { (7, 1), (6, 3) },
-        { (4, 2), (7, 4) },
-        { (5, 2), (6, 4) },
-        { (1, 2), (2, 4) },
-        { (0, 2), (3, 4) },
+        { (0, 0), (4, 5) }, // z
+        { (1, 0), (5, 5) }, // z
+        { (2, 0), (6, 5) }, // z
+        { (3, 0), (7, 5) }, // z
+        { (4, 1), (5, 3) }, // x
+        { (0, 1), (1, 3) }, // x
+        { (3, 1), (2, 3) }, // x
+        { (7, 1), (6, 3) }, // x
+        { (4, 2), (7, 4) }, // y 
+        { (5, 2), (6, 4) }, // y
+        { (1, 2), (2, 4) }, // y
+        { (0, 2), (3, 4) }, // y
     };
 
     // each of the 4 cells share a common edge
     // this maps the face edges to the 2 cube edges that share it
+    // [face, quadEdge] => (cellChildIdx, cellEdgeIdx)
     public static readonly (int cell, int edge)[,,] faceEdges = new (int, int)[,,] {
         {{ (4, 1), (5, 3) }, { (5, 2), (6, 0) }, { (6, 3), (7, 1) }, { (7, 0), (4, 2)}},
         {{ (5, 5), (1, 1) }, { (1, 6), (2, 4) }, { (2, 1), (6, 5) }, { (6, 4), (5, 6)}},
