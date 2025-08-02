@@ -526,44 +526,6 @@ public class CMSTree {
                     }
                 }
 
-                // TODO: I think this is not needed??
-                /*
-                var unique = loop.Distinct().ToArray();
-                var sharpIndices = unique.Where(x => vertices[x].sharp).ToArray();
-                if (false && sharpIndices.Length == 2 
-                    && !adjacencies[sharpIndices[0], sharpIndices[1]]
-                    && !forceFlat
-                ) {
-                    // split the loop in two
-                    var sharpIdx = sharpIndices[0]; 
-                    var sharpIdx2 = sharpIndices[1];
-
-                    var idx1 = loop.IndexOf(sharpIdx);
-                    var idx2 = loop.IndexOf(sharpIdx2);
-
-                    List<int> cutLoop(List<int> loop, int idx1, int idx2) {
-                        List<int> ret = new List<int>();
-                        for (int i = idx1; i != idx2; i = (i + 1) % loop.Count) {
-                            ret.Add(loop[i]);
-                        }
-                        ret.Add(loop[idx2]);
-                        return ret;
-                    }
-
-                    var loop1 = cutLoop(loop, idx1, idx2);
-                    var loop2 = cutLoop(loop, idx2, idx1);
-
-                    if (loop1.Count > 2 && loop2.Count > 2) {
-                        processLoop(loop1, forceFlat: true);
-                        firstLoop = true;
-                        processLoop(loop2, forceFlat: true);
-                        return;
-                    } else {
-                        Debug.Warning("Tried to cut sharp feature, but the cut was too small.");
-                    }
-                }
-                */
-
                 Vector3 massPoint;
                 var distinctIndices = loop.Distinct().ToArray();
                 Vector3 sum = Vector3.ZERO;

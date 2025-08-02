@@ -46,6 +46,15 @@ public class CMS {
         (0, 1, 1),
     };
 
+    public static readonly int[,] faceCubeCornersXX = new int[,] {
+        { 4, 5, 6, 7 },
+        { 5, 1, 2, 6 },
+        { 7, 6, 2, 3 },
+        { 4, 0, 3, 7 },
+        { 4, 5, 1, 0 },
+        { 0, 1, 2, 3 },
+    };
+
     public static readonly Vector3[] faceCenters = new Vector3[] {
         new Vector3(0.5f, 0.5f, 1.0f), // face 0
         new Vector3(1.0f, 0.5f, 0.5f), // face 1
@@ -101,6 +110,15 @@ public class CMS {
         { (4, 0), (5, 0) },
     };
 
+    public static readonly bool[][] edgeFlipTable = new bool[][] {
+        new bool[]{ false, false, true, true },
+        new bool[]{ true, false, false, true },
+        new bool[]{ false, true, true, false },
+        new bool[]{ true, false, false, true },
+        new bool[]{ false, true, true, false },
+        new bool[]{ false, false, true, true },
+    };
+
     public static readonly (int face, int edge)[,] cubeEdgeToFaceEdgeXX = new (int, int)[12, 2] {
         { (0, 0), (4, 0) }, //
         { (0, 1), (1, 3) }, //
@@ -115,6 +133,54 @@ public class CMS {
         { (3, 1), (5, 3) }, //
         { (4, 2), (5, 0) }, //
     };
+
+    public static Vector2 CubePosToFacePosXX(int face, Vector3 pos, float size) {
+        switch (face) {
+            case 0:
+            case 5:
+                return new Vector2(pos.x, pos.y);
+            case 1:
+            case 3:
+                return new Vector2(size - pos.z, pos.y);
+            case 2:
+            case 4:
+                return new Vector2(pos.x, size - pos.z);
+            default: throw new ArgumentException("Invalid face");
+        }
+    }
+
+    public static Vector2 CubeDirToFaceDirXX(int face, Vector3 dir) {
+        switch (face) {
+            case 0:
+            case 5:
+                return new Vector2(dir.x, dir.y).Normalized;
+            case 1:
+            case 3:
+                return new Vector2(-dir.z, dir.y).Normalized;
+            case 2:
+            case 4:
+                return new Vector2(dir.x, -dir.z).Normalized;
+            default: throw new ArgumentException("Invalid face");
+        }
+    }
+
+    public static Vector3 FacePosToCubePosXX(int face, Vector2 pos, float size) {
+        switch(face) {
+            case 0:
+                return new Vector3(pos.x, pos.y, size);
+            case 5:
+                return new Vector3(pos.x, pos.y, 0);
+            case 1:
+                return new Vector3(size, pos.y, size - pos.x);
+            case 3:
+                return new Vector3(0, pos.y, size - pos.x);
+            case 2:
+                return new Vector3(pos.x, size, size - pos.y);
+            case 4:
+                return new Vector3(pos.x, 0, size - pos.y);
+            default: throw new ArgumentException("Invalid face");
+        }
+    }
 
     public static readonly int[] cubeEdgeDir = new int[12] {
         0, 1, 0, 1, 2, 1, 2, 0, 2, 2, 1, 0
@@ -170,6 +236,26 @@ public class CMS {
         (0, 3),
         (3, 2),
         (1, 2),
+    };
+
+    // NOTE: these are set up such that first is cw and second ccw (when rotating 90 degrees)
+    public static readonly int [,] quadSegmentsXX = new int[16, 4] {
+        { -1, -1, -1, -1},
+        {  3,  0, -1, -1},
+        {  0,  1, -1, -1},
+        {  3,  1, -1, -1},
+        {  1,  2, -1, -1},
+        {  0,  3,  2,  1}, // TODO
+        {  0,  2, -1, -1},
+        {  3,  2, -1, -1},
+        {  2,  3, -1, -1},
+        {  2,  0, -1, -1},
+        {  1,  0,  3,  2}, // TODO
+        {  2,  1, -1, -1},
+        {  1,  3, -1, -1},
+        {  1,  0, -1, -1},
+        {  0,  3, -1, -1},
+        { -1, -1, -1, -1},
     };
 
     // segment connections, indices are to quadEdges

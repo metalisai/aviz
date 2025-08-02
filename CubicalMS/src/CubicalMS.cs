@@ -28,7 +28,7 @@ public void Init(AnimationSettings settings) {
     settings.Name = "My animation";
     // animation length must be bounded
     // (it gets "baked" to allow seeking whole animation in editor)
-    settings.MaxLength = 1200.0f; 
+    settings.MaxLength = 1600.0f; 
 }
 
 /*
@@ -1130,6 +1130,28 @@ class VisEdgeNode {
         }
     }
 
+	public (Vector3 p, Vector3 n)? getIntersection() {
+		if (intersection.HasValue) {
+			return intersection;
+		}
+		else {
+			return first?.getIntersection() ?? second?.getIntersection();
+		}
+	}
+
+	public (VisEdgeNode e, Vector3 p, Vector3 n)? getIntersectionWithEdge() {
+		if (intersection.HasValue) {
+			if (!intersection.HasValue) {
+				return null;
+			} else {
+				return (this, intersection.Value.p, intersection.Value.n);
+			}
+		}
+		else {
+			return first?.getIntersectionWithEdge() ?? second?.getIntersectionWithEdge();
+		}
+	}
+
     public void Subdivide() {
         Debug.Assert(first == null && second == null, "Only leaf nodes can be subdivided");
         (first, second) = Split();
@@ -1180,6 +1202,8 @@ class VisFaceNode {
         }
 
         // assign outer
+		switch (face) {
+			default:
         children[0].edges[0] = edges[0].first;
         children[1].edges[0] = edges[0].second;
         children[1].edges[1] = edges[1].first;
@@ -1188,8 +1212,35 @@ class VisFaceNode {
         children[3].edges[2] = edges[2].first;
         children[3].edges[3] = edges[3].second;
         children[0].edges[3] = edges[3].first;
+		break;
+			case 2:
+			case 4:
+        children[0].edges[0] = edges[0].first;
+        children[1].edges[0] = edges[0].second;
+        children[1].edges[1] = edges[1].second;
+        children[2].edges[1] = edges[1].first;
+        children[2].edges[2] = edges[2].second;
+        children[3].edges[2] = edges[2].first;
+        children[3].edges[3] = edges[3].first;
+        children[0].edges[3] = edges[3].second;
+		break;
+			case 1:
+			case 3:
+        children[0].edges[0] = edges[0].second;
+        children[1].edges[0] = edges[0].first;
+        children[1].edges[1] = edges[1].first;
+        children[2].edges[1] = edges[1].second;
+        children[2].edges[2] = edges[2].first;
+        children[3].edges[2] = edges[2].second;
+        children[3].edges[3] = edges[3].second;
+        children[0].edges[3] = edges[3].first;
+		break;
+		}
 
         // assign internal
+		switch(face) {
+		case 0:
+		case 5:
         children[0].edges[1] = internalEdges[0];
         children[0].edges[2] = internalEdges[3];
         children[1].edges[3] = internalEdges[0];
@@ -1198,78 +1249,36 @@ class VisFaceNode {
         children[2].edges[3] = internalEdges[2];
         children[3].edges[0] = internalEdges[3];
         children[3].edges[1] = internalEdges[2];
+		break;
+		case 1:
+		case 3:
+		children[0].edges[1] = internalEdges[0];
+        children[0].edges[2] = internalEdges[1];
+        children[1].edges[3] = internalEdges[0];
+        children[1].edges[2] = internalEdges[3];
+        children[2].edges[0] = internalEdges[3];
+        children[2].edges[3] = internalEdges[2];
+        children[3].edges[0] = internalEdges[1];
+        children[3].edges[1] = internalEdges[2];
+		break;
+		case 2:
+		case 4:
+        children[0].edges[1] = internalEdges[2];
+        children[0].edges[2] = internalEdges[3];
+        children[1].edges[3] = internalEdges[2];
+        children[1].edges[2] = internalEdges[1];
+        children[2].edges[0] = internalEdges[1];
+        children[2].edges[3] = internalEdges[0];
+        children[3].edges[0] = internalEdges[3];
+        children[3].edges[1] = internalEdges[0];
+		break;
+		}
 
         foreach(var child in children) {
             foreach(var edge in child.edges) {
                 Debug.Assert(edge != null);
             }
         }
-
-        /*Vector3[] halfVertices = new Vector3[26];
-        for (int i = 0; i < 8; i++) {
-            halfVertices[i] = min + CMS.cornerOffsets[i] * size;
-        }
-        for (int i = 0; i < 12; i++) {
-            var (si, ei) = CMS.cubeEdgeCorners[i];
-            var s = CMS.cornerOffsets[si] * size + min;
-            var e = CMS.cornerOffsets[ei] * size + min;
-            halfVertices[i + 8] = (s + e) * 0.5f;
-        }
-        halfVertices[20] = min + new Vector3(0.5f * size, 0.5f * size, size);
-        halfVertices[21] = min + new Vector3(size, 0.5f * size, 0.5f * size);
-        halfVertices[22] = min + new Vector3(0.5f * size, size, 0.5f * size);
-        halfVertices[23] = min + new Vector3(0.0f, 0.5f * size, 0.5f * size);
-        halfVertices[24] = min + new Vector3(0.5f * size, 0.0f, 0.5f * size);
-        halfVertices[25] = min + new Vector3(0.5f * size, 0.5f * size, 0.0f);
-        
-        int[,,] faceEdges = new int[6, 4, 4] {
-            {
-                {4, 8, 20, 11},
-                {8, 5, 9, 20},
-                {20, 9, 6, 10},
-                {11, 20, 10, 7},
-            },
-            {
-                {5, 12, 21, 9},
-                {12, 1, 13, 21},
-                {21, 13, 2, 14},
-                {9, 21, 14, 6},
-            },
-            {
-                {7, 10, 22, 16},
-                {10, 6, 14, 22},
-                {22, 14, 2, 15},
-                {16, 22, 15, 3},
-            },
-            {
-                {4, 17, 23, 11},
-                {17, 0, 18, 23},
-                {23, 18, 3, 16},
-                {11, 23, 16, 7},
-            },
-            {
-                {4, 8, 24, 17},
-                {8, 5, 12, 24},
-                {24, 12, 1, 19},
-                {17, 24, 19, 0},
-            },
-            {
-                {0, 19, 25, 18},
-                {19, 1, 13, 25},
-                {25, 13, 2, 15},
-                {18, 25, 15, 3},
-            },
-        };
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                var si = faceEdges[face, i, j];
-                var ei = faceEdges[face, i, (j + 1) % 4];
-                var s = halfVertices[si];
-                var e = halfVertices[ei];
-                children[i].edges[j] = new VisEdgeNode() { s = s, e = e };
-            }
-        }
-        */
     }
 }
 
@@ -1280,6 +1289,7 @@ class VisNode {
     public int depth;
     public float size;
     public Vector3 min;
+	public byte corners;
 
     public VisFaceNode[] faces = new VisFaceNode[6];
 
@@ -1497,7 +1507,28 @@ class VisNode {
         return this.children;
     }
 
-    public void AssignIntersections(List<(Vector3 v, Vector3 n)> intersections) {
+    public void AssignIntersections(HermiteData data) {
+		// assign corners
+		int step = (int)Math.Round(this.size / data.step);
+		Debug.Assert(MathF.Abs(step - this.size / data.step) < 0.0001f, $"Step size should be equal to data step size. Expected: {data.step / this.size}, Actual: {step}");
+		int ox = (int)Math.Floor((this.min.x - data.offset.x) / data.step);
+		int oy = (int)Math.Floor((this.min.y - data.offset.y) / data.step);
+		int oz = (int)Math.Floor((this.min.z - data.offset.z) / data.step);
+		Debug.Assert(MathF.Abs(ox - (this.min.x - data.offset.x) / data.step) < 0.0001f, "Offset should be equal to data offset");
+		Debug.Assert(MathF.Abs(oy - (this.min.y - data.offset.y) / data.step) < 0.0001f, "Offset should be equal to data offset");
+		Debug.Assert(MathF.Abs(oz - (this.min.z - data.offset.z) / data.step) < 0.0001f, "Offset should be equal to data offset");
+		byte corners = 0;
+		for (int i = 0; i < 8; i++) {
+			var offset = CMS.cornerOffsetsI[i];
+			int xi = ox + offset.x * step;
+			int yi = oy + offset.y * step;
+			int zi = oz + offset.z * step;
+			bool val = data.signs[xi, yi, zi];
+			corners |= (byte)(val ? 1 << i : 0);
+		}
+		this.corners = corners;
+
+		// assign face intersections
         for (int i = 0; i < 6; i++) {
             var face = faces[i];
             if (!face.isLeaf) {
@@ -1510,7 +1541,7 @@ class VisNode {
                     continue; // already assigned
                 }
                 var edgeIdx = CMS.faceEdgeToCubeEdgeXX[i, j];
-                var intrs = findEdgeIntersections(intersections, min, size, edgeIdx);
+                var intrs = findEdgeIntersections(data, min, size, edgeIdx);
                 if (intrs.Length == 0) {
                     continue; // no intersection found
 
@@ -1524,28 +1555,128 @@ class VisNode {
 
         foreach(var child in children) {
             if (child == null) continue;
-            child.AssignIntersections(intersections);
+            child.AssignIntersections(data);
         }
     }
 
     public record CMSVertex();
     public record CMSEdgeVertex(VisEdgeNode node) : CMSVertex;
     public record CMSNewVertex(Vector3 position) : CMSVertex;
-    public record CMSSegment(CMSVertex v1, CMSVertex v2);
+    public record CMSSegment(CMSVertex v1, CMSVertex v2, VisFaceNode face);
 
-    static void EvaluateFace(VisFaceNode face, int faceId, List<CMSSegment> segments) {
-        // TODO: figure out corner locations
+    static async Task EvaluateFace(VisFaceNode face, int faceId, List<CMSSegment> segments, byte cornerBits, VisNode node) {
+
+		var testLine = new Line3D(width: 4, mode: MeshVertexMode.Segments);
+		testLine.Color = Color.MAGENTA;
+		World.current.CreateInstantly(testLine);
+		testLine.Vertices = new Vector3[] {
+			face.edges[0].s,
+			face.edges[0].e,
+			face.edges[1].s,
+			face.edges[1].e,
+			face.edges[2].s,
+			face.edges[2].e,
+			face.edges[3].s,
+			face.edges[3].e
+		};
+
+		var flipTable = CMS.edgeFlipTable[faceId];
+		Vector3[] corners = new Vector3[4];
+		corners[0] = !flipTable[0] ? face.edges[0].s : face.edges[0].e;
+		corners[1] = !flipTable[0] ? face.edges[0].e : face.edges[0].s;
+		corners[2] = !flipTable[2] ? face.edges[2].s : face.edges[2].e;
+		corners[3] = !flipTable[2] ? face.edges[2].e : face.edges[2].s;
+		float size = node.size;
+		Vector3 min = node.min;
+
+		bool[] samples = new bool[4];
+		for (int i = 0; i < 4; i++) {
+			int corner = CMS.faceCubeCornersXX[faceId, i];
+			samples[i] = ((cornerBits >> corner) & 1) == 1;
+		}
+
+
+		Sphere[] spheres = new Sphere[4];
+		for (int i = 0; i < 4; i++) {
+			spheres[i] = new Sphere(0.05f);
+			spheres[i].Position = corners[i];
+			spheres[i].Color = samples[i] ? Color.WHITE : Color.BLACK;
+			World.current.CreateInstantly(spheres[i]);
+		}
+
+		int caseId = (samples[0] ? 1 : 0) |
+			(samples[1] ? 2 : 0) |
+			(samples[2] ? 4 : 0) |
+			(samples[3] ? 8 : 0);
+
+		if (caseId == 0 || caseId == 15) {
+			World.current.Destroy(testLine);
+			World.current.Destroy(spheres.ToArray());
+			return; // no segments to draw
+		}
+
+		// ambiguous case
+		if (caseId != 5 && caseId != 10) {
+			// non ambiguous cases always have only 1 segment
+			int startEdge = CMS.quadSegmentsXX[caseId, 0];
+			int endEdge = CMS.quadSegmentsXX[caseId, 1];
+
+			var e1 = new CMSEdgeVertex(face.edges[startEdge]);
+			var e2 = new CMSEdgeVertex(face.edges[endEdge]);
+			// NOTE: always use leaf nodes
+			//   this is because a parent would be considered a different node, even though they point to same intersection
+			//   when detecing segment loops this is important
+			//   otherwise transition cells don't connect properly
+			var intr1 = e1.node.getIntersectionWithEdge();
+			var intr2 = e2.node.getIntersectionWithEdge();
+			Debug.Assert(intr1 != null && intr1.HasValue, $"Intersection for edge {startEdge} not found");
+			Debug.Assert(intr2 != null && intr2.HasValue, $"Intersection for edge {endEdge} not found");
+			e1 = intr1 == null ? null : new CMSEdgeVertex(intr1.Value.e);
+			e2 = intr2 == null ? null : new CMSEdgeVertex(intr2.Value.e);
+
+			var n1 = CMS.CubeDirToFaceDirXX(faceId, intr1.Value.n);
+			var n2 = CMS.CubeDirToFaceDirXX(faceId, intr2.Value.n);
+			var t1 = n1.PerpCw;
+			var t2 = n2.PerpCcw;
+			var det = t1.x * t2.y - t1.y * t2.x;
+			// normals nearly parallel, no sharp feature
+			if (Vector2.Dot(n1, n2) >= SHARP_FEATURE_ANGLE_THRESHOLD || det == 0.0f) {
+				var seg = new CMSSegment(e1, e2, face);
+				segments.Add(seg);
+			} else {
+				var p1 = CMS.CubePosToFacePosXX(faceId, intr1.Value.p - min, size);
+				var p2 = CMS.CubePosToFacePosXX(faceId, intr2.Value.p - min, size);
+				var t = (t2.y*(p2.x-p1.x) - t2.x*(p2.y-p1.y)) / det;
+				var p3 = p1 + t * t1;
+				p3.x = float.Clamp(p3.x, 0.0f, size);
+				p3.y = float.Clamp(p3.y, 0.0f, size);
+				var p3World = min + CMS.FacePosToCubePosXX(faceId, p3, size);
+				var newVert = new CMSNewVertex(p3World);
+				var seg1 = new CMSSegment(e1, newVert, face);
+				var seg2 = new CMSSegment(newVert, e2, face);
+				segments.Add(seg1);
+				segments.Add(seg2);
+			}
+		} else {
+			//throw new NotImplementedException($"Ambiguous case {caseId} not implemented");
+		}
+		//await Time.WaitSeconds(1.0f);
+		await Time.WaitFrame();
+		World.current.Destroy(testLine);
+		World.current.Destroy(spheres.ToArray());
     }
 
-    public void EvaluateFaces() {
+    public async Task<Dictionary<VisFaceNode, List<CMSSegment>>> EvaluateFaces() {
         // Find all unique leaf faces
-        Dictionary<VisFaceNode, int> faceSet = new();
+        Dictionary<VisFaceNode, (int face, VisNode node)> faceSet = new();
+		Dictionary<VisFaceNode, List<CMSSegment>> faceSegments = new();
+
         void traverse(VisNode node) {
             for(int i = 0; i < 6; i++) {
                 var face = node.faces[i];
                 if (face.isLeaf) {
                     if (!faceSet.ContainsKey(face)) {
-                        faceSet.Add(face, i);
+                        faceSet.Add(face, (i, node));
                     }
                 }
             }
@@ -1555,32 +1686,428 @@ class VisNode {
                 }
             }
         }
+		traverse(this);
         var faces = faceSet.ToList();
 
-        foreach (var (face, faceId) in faces) {
-            EvaluateFace(face, faceId);
+		Debug.Log($"Found {faces.Count} unique leaf faces");
+
+        foreach (var (face, (faceId, node)) in faces) {
+			List<CMSSegment> segs = new();
+            await EvaluateFace(face, faceId, segs, node.corners, node);
+			faceSegments.Add(face, segs);
         }
+
+		await Time.WaitSeconds(1.0f);
+		List<Vector3> vertices = new();
+		var visLines = new Line3D(mode: MeshVertexMode.Segments);
+		visLines.Color = Color.BLUE;
+		foreach(var segList in faceSegments.Values) {
+			foreach(var seg in segList) {
+				vertices.Add(seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position);
+				vertices.Add(seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position);
+			}
+		}
+		visLines.Vertices = vertices.ToArray();
+		World.current.CreateInstantly(visLines);
+		await Time.WaitSeconds(1.0f);
+
+		return faceSegments;
     }
 
-    public void GetSegments(out VisEdgeNode[] vertices) {
-        vertices = null;
+	public async Task<(int[], int[])> GetLoops(List<CMSSegment> segments) {
+		HashSet<CMSVertex> visited = new();
+		Dictionary<CMSVertex, List<CMSSegment>> vertexSegments = new();
+		foreach(var seg in segments) {
+			if (!vertexSegments.ContainsKey(seg.v1)) {
+				vertexSegments[seg.v1] = new List<CMSSegment>();
+			}
+			if (!vertexSegments.ContainsKey(seg.v2)) {
+				vertexSegments[seg.v2] = new List<CMSSegment>();
+			}
+			vertexSegments[seg.v1].Add(seg);
+			vertexSegments[seg.v2].Add(seg);
+		}
+
+		async Task<List<int>> BuildLoop(CMSVertex start, HashSet<CMSSegment> usedSegments)
+		{
+			List<int> loop = new();
+			CMSVertex current = start;
+			CMSVertex previous = null;
+
+			while (true)
+			{
+				visited.Add(current);
+				var segs = vertexSegments[current];
+
+				CMSSegment nextSeg = segs
+					.FirstOrDefault(s => !usedSegments.Contains(s));
+
+				if (nextSeg == null) {
+					Debug.Error($"No next segment found for vertex {current}. This should not happen.");
+					Debug.Log($"All segments: {string.Join(", ", segments.Select(s => $"({((CMSEdgeVertex)(s.v1)).node.s} {((CMSEdgeVertex)(s.v1)).node.e}) p{((CMSEdgeVertex)(s.v1)).node.getIntersection().Value.p} -TO- ({((CMSEdgeVertex)(s.v2)).node.s} {((CMSEdgeVertex)(s.v2)).node.e}) p{((CMSEdgeVertex)(s.v2)).node.getIntersection().Value.p}"))}");
+					await Time.WaitSeconds(1700.0f);
+					break; // dead end or loop complete
+				}
+
+				usedSegments.Add(nextSeg);
+				loop.Add(segments.IndexOf(nextSeg));
+
+				CMSVertex next = nextSeg.v1 == current ? nextSeg.v2 : nextSeg.v1;
+
+				if (next == start)
+				{
+					// closed loop
+					break;
+				}
+
+				previous = current;
+				current = next;
+			}
+
+			return loop;
+		}
+		(int[], int[]) ret = (null, null);
+		HashSet<CMSSegment> usedSegments = new();
+
+		foreach (var v in vertexSegments.Keys)
+		{
+			if (!visited.Contains(v))
+			{
+				var loop = await BuildLoop(v, usedSegments);
+				if (loop.Count > 0 && ret.Item1 == null)
+				{
+					ret = (loop.ToArray(), null);
+				}
+				else if (loop.Count > 0 && ret.Item2 == null)
+				{
+					ret = (ret.Item1, loop.ToArray());
+					break;
+				}
+				else
+				{
+					Debug.Assert(false, "Found more than 2 loops, this is not valid.");
+				}
+			}
+		}
+		return ret;
+	}
+
+	public async Task ExtractSurface() {
+		List<CMSSegment> currentSegments = new();
+		var faceSegments = await EvaluateFaces();
+		Dictionary<CMSVertex, uint> vertexMap = new();
+		List<(Vector3 p, Vector3? n)> vertices = new();
+		List<uint> indices = new();
+		uint vIdx = 0;
+
+		void processLoop(int[] loop, VisNode node) {
+			if (loop == null) return;
+			Vector3 massPoint = Vector3.ZERO;
+			float mass = 0.0f;
+			List<uint> curIndices = new();
+			// for sharp feature detection
+			List<Vector3?> normals = new();
+			void newVert(CMSVertex v) {
+				if (!vertexMap.ContainsKey(v)) {
+					if (v is CMSEdgeVertex ev) {
+						var intr = ev.node.getIntersection();
+						vertices.Add((intr.Value.p, intr.Value.n));
+					} else if(v is CMSNewVertex nv) {
+						vertices.Add((nv.position, null));
+					} else throw new NotImplementedException();
+					massPoint += vertices.Last().p;
+					vertexMap[v] = vIdx;	
+					curIndices.Add(vIdx++);
+				} else {
+					curIndices.Add(vertexMap[v]);
+					massPoint += vertices[(int)vertexMap[v]].p;
+				}
+			}
+			foreach(var idx in loop) {
+				newVert(currentSegments[idx].v1);
+				newVert(currentSegments[idx].v2);
+				mass += 2.0f;
+			}
+
+			float minCos = 1.0f;
+			for (int i = 0; i < curIndices.Count; i++) {
+				for (int j = i + 1; j < curIndices.Count; j++) {
+					var v1 = vertices[(int)curIndices[i]];
+					var v2 = vertices[(int)curIndices[j]];
+					if (v1.n == null || v2.n == null) continue;
+					var ccos = Vector3.Dot(v1.n.Value, v2.n.Value);
+					if (ccos < minCos) {
+						minCos = ccos;
+					}
+				}	
+			}
+
+			// calculate mass point
+			massPoint *= 1.0f / mass;
+			Vector3 newVertex;
+			if (minCos > 0.9f) { // no sharp feature
+				newVertex = massPoint;
+			} else {
+				// calculate sharp feature
+				var validVertices = curIndices
+					.Select(i => vertices[(int)i])
+					.Where(v => v.n.HasValue)
+					.ToList();
+				var matrix = Matrix<float>.Build.Dense(validVertices.Count, 3);
+				var vector = Vector<float>.Build.Dense(validVertices.Count, 1.0f);
+				for (int i = 0; i < validVertices.Count; i++) {
+					var n = validVertices[i].n.Value;
+					matrix.SetRow(i, new float[] { n.x, n.y, n.z });
+					vector[i] = Vector3.Dot(n, validVertices[i].p - massPoint);
+				}
+				var svd = matrix.Svd(true);
+				var mw = svd.W;
+				var ms = svd.S;
+				for (int i = 0; i < ms.Count; i++)
+				{
+					ms[i] = MathF.Abs(ms[i]) < float.Epsilon ? 0 : 1/ms[i];
+				}
+				mw.SetDiagonal(ms);
+				var pseudoInverse = (svd.U * mw * svd.VT).Transpose();
+				var result = pseudoInverse * vector;
+				var p = new Vector3(result[0], result[1], result[2]) + massPoint;
+				if (p.x < node.min.x || p.x > node.min.x + node.size ||
+					p.y < node.min.y || p.y > node.min.y + node.size ||
+					p.z < node.min.z || p.z > node.min.z + node.size) {
+					newVertex = massPoint;
+				} else {
+					newVertex = p;
+				}
+			}
+			uint mpIdx = vIdx++;
+			vertices.Add((newVertex, null));
+			for (int i = 0; i < curIndices.Count; i += 2) {
+				indices.Add(curIndices[i]);
+				indices.Add(curIndices[i + 1]);
+				indices.Add(mpIdx);
+			}
+		}
+
+		List<Vector3> testLines = new();
+		var testLine = new Line3D(mode: MeshVertexMode.Segments);
+		testLine.Width = 5.1f;
+		testLine.Color = Color.ORANGE;
+		World.current.CreateInstantly(testLine);
+		
+		List<Vector3> testLines2 = new();
+		List<Color> testColors2 = new();
+		var testLine2 = new Line3D(mode: MeshVertexMode.Segments);
+		testLine2.Width = 6.1f;
+		//testLine2.Color = Color.CYAN;
+		World.current.CreateInstantly(testLine2);
+
+		async Task recurseCells(VisNode node) {
+			if (node.children[0] == null) { // leaf node
+				currentSegments.Clear();
+				node.GetSegments(currentSegments, faceSegments);
+
+				testLines2.Clear();
+				testColors2.Clear();
+				foreach(var seg in currentSegments) {
+					var p1 = seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position;
+					var p2 = seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position;
+					testLines2.Add(p1);
+					testLines2.Add(p2);
+					testColors2.Add(Color.CYAN);
+					testColors2.Add(Color.CYAN);
+				}
+				for(int i = 0; i < 12; i++) {
+					var (si, ei) = CMS.cubeEdgeCorners[i];
+					var s = CMS.cornerOffsets[si] * node.size + node.min;
+					var e = CMS.cornerOffsets[ei] * node.size + node.min;
+					testLines2.Add(s);
+					testLines2.Add(e);
+					testColors2.Add(Color.RED);
+					testColors2.Add(Color.RED);
+				}
+				List<Sphere> spheres = new();
+				for (int i = 0; i < 8; i++) {
+					var offset = CMS.cornerOffsets[i];
+					var sphere = new Sphere(0.05f);
+					sphere.Position = node.min + offset * node.size;
+					sphere.Color = ((node.corners>>i)&1) == 1 ? Color.WHITE : Color.BLACK;
+					World.current.CreateInstantly(sphere);
+					spheres.Add(sphere);
+				}
+				testLine2.Vertices = testLines2.ToArray();
+				testLine2.Colors = testColors2.ToArray();
+
+				var (loop1, loop2) = await GetLoops(currentSegments);
+				if (loop1 != null) {
+					testLines.Clear();
+					foreach(var idx in loop1) {
+						testLines.Add(currentSegments[idx].v1 is CMSEdgeVertex ev ? ev.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v1).position);
+						testLines.Add(currentSegments[idx].v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v2).position);
+					}
+					testLine.Vertices = testLines.ToArray();
+					await Time.WaitSeconds(1.0f);
+				}
+				processLoop(loop1, node);
+				processLoop(loop2, node);
+				currentSegments.Clear();
+				World.current.Destroy(spheres.ToArray());
+			} else {
+				foreach(var child in node.children) {
+					await recurseCells(child);
+				}
+			}
+		}
+		await recurseCells(this);
+
+		Debug.Assert(vertexMap.Values.Select(x => x).Distinct().Count() == vertexMap.Count, "Vertex indices should be unique");
+		var mesh = new Mesh();
+		mesh.Vertices = vertices.Select(x => x.p).ToArray();
+		mesh.Indices = indices.ToArray();
+		mesh.Color = Color.CYAN;
+		mesh.Outline = Color.BLACK;
+		World.current.CreateInstantly(mesh);
+		await Time.WaitSeconds(1.0f);
+	}
+
+    public void GetSegments(List<CMSSegment> outSegments, Dictionary<VisFaceNode, List<CMSSegment>> faceSegments) {
+		void recurseFace(VisFaceNode face) {
+			if (face.isLeaf) {
+				faceSegments.TryGetValue(face, out var segments);
+				outSegments.AddRange(segments);
+			} else {
+				foreach(var child in face.children) {
+					recurseFace(child);
+				}
+			}
+		}
+		foreach(var face in faces) {
+			recurseFace(face);
+		}
     }
 }
 
-static (Vector3 p, Vector3 n)[] findEdgeIntersections(List<(Vector3 v, Vector3 n)> intersections, Vector3 min, float size, int edge) {
+static (Vector3 p, Vector3 n)[] findEdgeIntersections(HermiteData data, Vector3 min, float size, int edge) {
     List<(Vector3, Vector3)> ret = new ();
+	var edgeDir = CMS.cubeEdgeDir[edge];
+    var (si, ei) = CMS.cubeEdgeCorners[edge];
+    var s = min + CMS.cornerOffsets[si] * size;
+    var e = min + CMS.cornerOffsets[ei] * size;
+	var sOfst = s - data.offset;
+	var step = data.step;
+	int xi = (int)Math.Round(sOfst.x / step);
+	int yi = (int)Math.Round(sOfst.y / step);
+	int zi = (int)Math.Round(sOfst.z / step);
+	float runLength = (e - s).Length;
+	int runCount = (int)Math.Round(Math.Abs(runLength) / step);
+	Debug.Assert(Math.Abs(runLength) / step - runCount < 0.0001f, $"Run count should be exact {Math.Abs(runLength) / step - runCount} size {size}");
+	List<(Vector3, Vector3)> intersectionsList = new();
+	for (int i = 0; i < runCount; i++) {
+		(Vector3 v, Vector3 n)? cur = null;
+		try {
+		switch (edgeDir) {
+			case 0:
+				cur = data.intersections[edgeDir, yi, zi, xi + i];
+				break;
+			case 1:
+				cur = data.intersections[edgeDir, xi, zi, yi + i];
+				break;
+			case 2:
+				cur = data.intersections[edgeDir, xi, yi, zi + i];
+				break;
+		}
+		} catch (Exception){}
+		if (cur.HasValue) {
+			intersectionsList.Add(cur.Value);
+		}
+	}
+	return intersectionsList.ToArray();
+}
+
+static (Vector3 p, Vector3 n)[] findEdgeIntersections(List<(Vector3 v, Vector3 n, int dir)> intersections, Vector3 min, float size, int edge) {
+    List<(Vector3, Vector3)> ret = new ();
+	var edgeDir = CMS.cubeEdgeDir[edge];
     var (si, ei) = CMS.cubeEdgeCorners[edge];
     var s = min + CMS.cornerOffsets[si] * size;
     var e = min + CMS.cornerOffsets[ei] * size;
     foreach(var intr in intersections) {
+		if (intr.dir != edgeDir) continue;
         var p = AMath.ClosestPointOnLineSegment(intr.v, s, e);
         var dif = p - intr.v;
         var sqdist = Vector3.Dot(dif, dif);
-        if (sqdist < 0.00001f) {
+        if (sqdist < 0.0001f) {
             ret.Add((p, intr.n));
         }
     }
     return ret.ToArray();
+}
+
+public class HermiteData {
+	public (Vector3 p, Vector3 n)?[,,,] intersections;
+	public bool[,,] signs;
+	public Vector3 offset;
+	public float step;
+
+	public HermiteData(Func<Vector3, float> eval, Func<Vector3, Vector3> evalNormal, Vector3 offset, float step, int gridSize) {
+		this.offset = offset;
+		this.step = step;
+
+		var gp1 = gridSize+1;
+		signs = new bool[gp1, gp1, gp1];
+		intersections = new (Vector3, Vector3)?[3, gp1, gp1, gridSize];
+		// eval grid
+		for (int i = 0; i < gp1; i++)
+		for (int j = 0; j < gp1; j++)
+		for (int k = 0; k < gp1; k++) {
+			var location = new Vector3(offset.x + i * step, offset.y + j * step, offset.z + k * step);
+			signs[i, j, k] = eval(location) >= 0.0f;
+		}
+
+		for (int dir = 0; dir < 3; dir++) {
+			for (int k = 0; k < gridSize; k++)
+			for (int i = 0; i < gp1; i++) {
+				for (int j = 0; j < gp1; j++) {
+					var sample1 = dir switch {
+						0 => signs[k, i, j],
+						1 => signs[i, k, j],
+						2 => signs[i, j, k],
+						_ => false
+					};
+					var sample2 = dir switch {
+						0 => signs[k+1, i, j],
+						1 => signs[i, k+1, j],
+						2 => signs[i, j, k+1],
+						_ => false
+					};
+					if (sample1 == sample2) continue;
+					var start = dir switch {
+						0 => new Vector3(offset.x + k * step, offset.y + i * step, offset.z + j * step),
+						1 => new Vector3(offset.x + i * step, offset.y + k * step, offset.z + j * step),
+						2 => new Vector3(offset.x + i * step, offset.y + j * step, offset.z + k * step),
+						_ => Vector3.ZERO
+					};
+					var end = start + (dir switch {
+						0 => new Vector3(step, 0.0f, 0.0f),
+						1 => new Vector3(0.0f, step, 0.0f),
+						2 => new Vector3(0.0f, 0.0f, step),
+						_ => Vector3.ZERO
+					});
+					float curMin = float.MaxValue;
+					Vector3 minPos = Vector3.ZERO;
+					for (int s = 0; s <= 100; s++) {
+						Vector3 pos = Vector3.Lerp(start, end, s / 100.0f);
+						float val = eval(pos);
+						float dist = val*val;
+						if (dist < curMin) {
+							curMin = dist;
+							minPos = pos;
+						}
+					}
+					Vector3 minNormal = evalNormal(minPos);
+					intersections[dir, i, j, k] = (minPos, minNormal);
+				}
+			}
+		}
+	}
 }
 
 async Task AnimateOctree() {
@@ -1606,6 +2133,8 @@ async Task AnimateOctree() {
         return GetIntersections(pos, Evaluate, EvaluateNormal);
     };
 
+	var hermiteData = new HermiteData(Evaluate, EvaluateNormal, offset, gSize, gCount);
+
     Vector3 getOffset(int dir, int i, int j, int k) {
         return dir switch {
             0 => new Vector3(k*gSize, i*gSize, j*gSize) + offset,
@@ -1618,7 +2147,7 @@ async Task AnimateOctree() {
     var iSpheres = new List<Sphere>();
 
     // find all intersections
-    var intersections = new (Vector3 v, Vector3 n)?[3, gCount+1, gCount+1, gCount];
+    var intersections = new (Vector3 v, Vector3 n)?[3, gCount+1, gCount+1, gCount+1];
     var tempLine = new Line3D();
     tempLine.Width = 2.0f;
     tempLine.Color = Color.YELLOW;
@@ -1630,6 +2159,7 @@ async Task AnimateOctree() {
     world.CreateInstantly(normalLines);
 
     List<Vector3> normalLineVerts = new List<Vector3>();
+	List<Color> normalLineColors = new List<Color>();
     int oldNormalCount = 0;
 
     List<Vector3> lineVerts = new List<Vector3>();
@@ -1658,7 +2188,14 @@ async Task AnimateOctree() {
                 iSpheres.Add(s);
                 //world.CreateInstantly(s);
 
-                normalLineVerts.AddRange(new Vector3[] { intr[0].pos, intr[0].pos + 0.3f*intr[0].normal });
+                normalLineVerts.AddRange(new Vector3[] { intr[0].pos, intr[0].pos + (dir switch { 0 => 0.3f, 1 => 0.4f, 2 => 0.5f, _ => 0.0f })*intr[0].normal });
+				normalLineColors.Add(dir switch {
+					0 => Color.RED,
+					1 => Color.GREEN,
+					2 => Color.BLUE,
+					_ => Color.WHITE
+				});
+				normalLineColors.Add(normalLineColors.Last());
             } else {
                 intersections[dir, i, j, k] = null;
                 tempLine.Color = Color.RED;
@@ -1668,6 +2205,7 @@ async Task AnimateOctree() {
         }
             if (normalLineVerts.Count > oldNormalCount) {
                 normalLines.Vertices = normalLineVerts.ToArray();
+				normalLines.Colors = normalLineColors.ToArray();
                 oldNormalCount = normalLineVerts.Count;
             }
             tempLine.Vertices = lineVerts.ToArray();
@@ -1770,14 +2308,14 @@ async Task AnimateOctree() {
 
     }
 
-    List<(Vector3 p, Vector3 n)> intersections2 = new ();
+    List<(Vector3 p, Vector3 n, int dir)> intersections2 = new ();
     for(int i = 0; i < intersections.GetLength(1); i++) {
         for(int j = 0; j < intersections.GetLength(2); j++) {
             for(int k = 0; k < intersections.GetLength(3); k++) {
                 for (int d = 0; d < 3; d++) {
                     var intr = intersections[d, i, j, k];
                     if (intr.HasValue) {
-                        intersections2.Add((intr.Value.v, intr.Value.n));
+                        intersections2.Add((intr.Value.v, intr.Value.n, d));
                     }
                 }
             }
@@ -1806,7 +2344,7 @@ async Task AnimateOctree() {
             await Animate.TransformTo(World.current.ActiveCamera, pos, rot, 0.5f);
         }
         if (!highlightLines.Created) {
-            await world.CreateFadeIn(highlightLines, 0.5f);
+            await world.CreateFadeIn(highlightLines, quick ? 0.1f : 0.5f);
             highlightLines.Position = l.min;
             highlightLines.Scale = new Vector3(l.size);
         } else {
@@ -1825,9 +2363,10 @@ async Task AnimateOctree() {
         // TODO: find intersection on each cell edge
         List<HermiteIntersection> allIntr = new ();
         bool foundAny = false;
+		bool foundX = false;
         List<(Vector3 s, Vector3 e)> normalLines = new ();
         for (int i = 0; i < 12; i++) {
-            var intrs = findEdgeIntersections(intersections2, l.min, l.size, i);
+            var intrs = findEdgeIntersections(hermiteData, l.min, l.size, i);
             foreach(var intr in intrs) {
                 if (!quick) {
                     var sphere = new Sphere(0.05f);
@@ -1845,16 +2384,19 @@ async Task AnimateOctree() {
             if (intrs.Length > 1) {
                 foundAny = true;
             }
+			if (intrs.Length > 0) {
+				foundX = true;
+			}
         }
         if (!quick) {
             intrNormalLines.Vertices = normalLines.SelectMany(x => new Vector3[] { x.s, x.e }).ToArray();
         }
 
-        if (foundAny) {
+        if (foundX) {
             caseCount++;
         }
 
-        await Time.WaitSeconds(0.5f);
+        await Time.WaitSeconds(quick ? 0.1f : 0.5f);
         World.current.Destroy(spheres.ToArray());
         intrNormalLines.Vertices = [];
         bool complx = CMSCell.LikelyToContainComplexSurface(allIntr.ToArray());
@@ -1877,7 +2419,7 @@ async Task AnimateOctree() {
 
     List<Task> subdiveTasks = new List<Task>();
     foreach (var l in leaves) {
-        if (caseCount < 5) {
+        if (caseCount < 3) {
             await SubdiveIfNeeded(l, false);
         } else {
             subdiveTasks.Add(SubdiveIfNeeded(l, true));
@@ -1891,7 +2433,31 @@ async Task AnimateOctree() {
 
     await Time.WaitSeconds(1.0f);
 
-    tree.AssignIntersections(intersections2);
+    tree.AssignIntersections(hermiteData);
+
+	List<Vector3> xlines = new();
+	List<Color> xcolors = new();
+	var xline = new Line3D(mode: MeshVertexMode.Segments);
+	world.CreateInstantly(xline);
+	void traverse2(VisNode node) {
+		for (int i = 0; i < 8; i++) {
+			Vector3 pos = node.min + CMS.cornerOffsets[i] * node.size;
+			var rand = new Random().NextSingle()*-0.05f;
+			xlines.Add(pos + rand * Vector3.RIGHT);
+			xlines.Add(pos + new Vector3(0.1f, 0.1f, 0.1f));
+			bool sample = ((node.corners >> i) & 1) == 1;
+			xcolors.Add(sample ? Color.WHITE : Color.BLACK);
+			xcolors.Add(sample ? Color.WHITE : Color.BLACK);
+		}
+		foreach(var c in node.children){
+			if (c == null) continue;
+			traverse2(c);
+		}
+	}
+	//traverse2(tree);
+	xline.Vertices = xlines.ToArray();
+	xline.Colors = xcolors.ToArray();
+
 
     world.Destroy(cellLines);
     var testLine = new Line3D(mode: MeshVertexMode.Segments);
@@ -1921,10 +2487,15 @@ async Task AnimateOctree() {
     testLine.Vertices = testVerts.ToArray();
     //testLine.Colors = testColors.ToArray();
     testLine.Width = 2.0f;
-    world.CreateInstantly(testLine);
+    //world.CreateInstantly(testLine);
+
+	//var segments = await tree.EvaluateFaces();
+	await tree.ExtractSurface();
 
     var newTree = new VisNode(tree.min, tree.size);
     await newTree.SubdivideWithLines(new List<Vector3>(), true);
+	newTree.AssignIntersections(hermiteData);
+	await newTree.EvaluateFaces();
     newTree.SanityCheck();
     Debug.Log("Simple sanity check passed!");
     tree.SanityCheck();
