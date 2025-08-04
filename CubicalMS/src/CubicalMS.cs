@@ -1715,7 +1715,7 @@ class VisNode {
                     World.current.CreateInstantly(spheres[i]);
                 }
 
-                await Animate.TransformToLimited(cam, pos, rot, 0.5f, 15.0f);
+                await Animate.TransformToLimited(cam, pos, rot, 0.5f, 5.0f);
 
                 var segLine2 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
                 segLine2.Color = Color.ORANGE;
@@ -1733,7 +1733,7 @@ class VisNode {
             }
         }
 
-        await Animate.TransformToLimited(cam, oPos, oRot, 0.5f, 15.0f);
+        await Animate.TransformToLimited(cam, oPos, oRot, 0.5f, 5.0f);
 
         var segLine3 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
         segLine3.Color = Color.ORANGE;
@@ -2009,7 +2009,7 @@ class VisNode {
 					testLine.Vertices = testLines.ToArray();
                     if (doneCount < 10) {
 
-                        await Animate.TransformTo(World.current.ActiveCamera, pos, rot, 0.5f);
+                        await Animate.TransformToLimited(World.current.ActiveCamera, pos, rot, 0.5f, 5.0f);
                         await Time.WaitSeconds(1.0f);
                     } else {
                         await Time.WaitFrame();
@@ -2019,7 +2019,7 @@ class VisNode {
 				}
 
                 if (doneCount >= 10 && !done) {
-                    await Animate.TransformToLimited(World.current.ActiveCamera, oPos, oRot, 0.5f, 15.0f);
+                    await Animate.TransformToLimited(World.current.ActiveCamera, oPos, oRot, 0.5f, 5.0f);
                     done = true;
                 }
 
@@ -2383,9 +2383,7 @@ async Task AnimateOctree() {
         cellLines.Vertices = cellVerts.ToArray();
         cellLines.Color = Color.VIOLET;
         World.current.CreateInstantly(cellLines);
-
-        await Time.WaitSeconds(1.0f);
-
+        await Time.WaitSeconds(0.25f);
     }
 
     List<(Vector3 p, Vector3 n, int dir)> intersections2 = new ();
@@ -2411,17 +2409,28 @@ async Task AnimateOctree() {
     highlightLines.Color = Color.RED;
     highlightLines.Vertices = CubicalMS.CellOuterEdges(Vector3.ZERO, 1.0f).SelectMany(x => new Vector3[] { x.s, x.e }).ToArray();
 
+    async Task showText(string txt) {
+        var reasonText = new Text2D(txt);
+        reasonText.Color = Color.WHITE;
+        reasonText.Anchor = new Vector2(-0.25f, 0.2f);
+        await Animate.CreateText(reasonText, TextCreationMode.Fade, 0.0f);
+        await Time.WaitSeconds(0.5f);
+        var tasks = reasonText.CurrentShapes.Select(async g => await Animate.Color(g.s, g.s.Color, Color.TRANSPARENT, 0.5f)).ToArray();
+        await Task.WhenAll(tasks);
+        world.Destroy(reasonText);
+    }
+
     int caseCount = 0;
 
     var tasks = leaves.Select(l => Animate.Color(l.cell, l.cell.Color, Color.TRANSPARENT, 0.5f)).ToArray();
     await Task.WhenAll(tasks);
     async Task SubdiveIfNeeded(VisNode l, bool quick) {
+
         quick = caseCount > 4;
         if (!quick) {
             var forward = Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.UP) * Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.RIGHT) * Vector3.FORWARD;
             var (pos, rot) = Animate.ObservingTransform(l.min, l.min+ new Vector3(l.size), forward, World.current.ActiveCamera as PerspectiveCamera, 1920.0f/1080.0f);
-            await Time.WaitSeconds(0.5f);
-            await Animate.TransformTo(World.current.ActiveCamera, pos, rot, 0.5f);
+            await Animate.TransformToLimited(World.current.ActiveCamera, pos, rot, 0.5f, 5.0f);
         }
         if (!highlightLines.Created) {
             await world.CreateFadeIn(highlightLines, quick ? 0.1f : 0.5f);
@@ -2450,7 +2459,7 @@ async Task AnimateOctree() {
             foreach(var intr in intrs) {
                 if (!quick) {
                     var sphere = new Sphere(0.05f);
-                    sphere.Color = Color.RED;
+                    sphere.Color = Color.YELLOW;
                     sphere.Position = intr.p;
                     world.CreateInstantly(sphere);
                     spheres.Add(sphere);
@@ -2476,13 +2485,20 @@ async Task AnimateOctree() {
             caseCount++;
         }
 
-        await Time.WaitSeconds(quick ? 0.1f : 0.5f);
-        World.current.Destroy(spheres.ToArray());
-        intrNormalLines.Vertices = [];
+        //await Time.WaitSeconds(quick ? 0.1f : 0.5f);
         bool complx = CMSCell.LikelyToContainComplexSurface(allIntr.ToArray());
-        if ((complx && l.depth < 4) || (foundAny && l.depth < 12)) {
-            await l.SubdivideWithLines(cellVerts, quick);
-            cellLines.Vertices = cellVerts.ToArray();
+        if ((complx && l.depth < 4) || (foundAny && l.depth < 4)) {
+            var text = complx ? "Likely complex surface" : "Edge ambiguity";
+
+            async Task doSub() {
+                await l.SubdivideWithLines(cellVerts, quick);
+                cellLines.Vertices = cellVerts.ToArray();
+            }
+
+            Task[] tasks = [quick ? Task.CompletedTask : showText(text), doSub()];
+            await Task.WhenAll(tasks);
+            World.current.Destroy(spheres.ToArray());
+            intrNormalLines.Vertices = [];
 
             foreach(var child in l.children) {
                 if (child != null) {
@@ -2491,6 +2507,18 @@ async Task AnimateOctree() {
                     }
                 }
             }
+        } else if (!quick) {
+            string text = "";
+            if (spheres.Count == 0) {
+                text = "No intersections";
+            } else if (l.depth >= 4) {
+                text = "Depth limit reached";
+            } else {
+                text = "No edge ambiguity or complex surface";
+            }
+            await showText(text);
+            World.current.Destroy(spheres.ToArray());
+            intrNormalLines.Vertices = [];
         }
     }
 
