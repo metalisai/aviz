@@ -1564,28 +1564,7 @@ class VisNode {
     public record CMSNewVertex(Vector3 position) : CMSVertex;
     public record CMSSegment(CMSVertex v1, CMSVertex v2, VisFaceNode face);
 
-    static async Task EvaluateFace(VisFaceNode face, int faceId, List<CMSSegment> segments, byte cornerBits, VisNode node) {
-
-		var testLine = new Line3D(width: 4, mode: MeshVertexMode.Segments);
-		testLine.Color = Color.MAGENTA;
-		World.current.CreateInstantly(testLine);
-		testLine.Vertices = new Vector3[] {
-			face.edges[0].s,
-			face.edges[0].e,
-			face.edges[1].s,
-			face.edges[1].e,
-			face.edges[2].s,
-			face.edges[2].e,
-			face.edges[3].s,
-			face.edges[3].e
-		};
-
-		var flipTable = CMS.edgeFlipTable[faceId];
-		Vector3[] corners = new Vector3[4];
-		corners[0] = !flipTable[0] ? face.edges[0].s : face.edges[0].e;
-		corners[1] = !flipTable[0] ? face.edges[0].e : face.edges[0].s;
-		corners[2] = !flipTable[2] ? face.edges[2].s : face.edges[2].e;
-		corners[3] = !flipTable[2] ? face.edges[2].e : face.edges[2].s;
+    static void EvaluateFace(VisFaceNode face, int faceId, List<CMSSegment> segments, byte cornerBits, VisNode node, bool quick) {	
 		float size = node.size;
 		Vector3 min = node.min;
 
@@ -1595,23 +1574,12 @@ class VisNode {
 			samples[i] = ((cornerBits >> corner) & 1) == 1;
 		}
 
-
-		Sphere[] spheres = new Sphere[4];
-		for (int i = 0; i < 4; i++) {
-			spheres[i] = new Sphere(0.05f);
-			spheres[i].Position = corners[i];
-			spheres[i].Color = samples[i] ? Color.WHITE : Color.BLACK;
-			World.current.CreateInstantly(spheres[i]);
-		}
-
 		int caseId = (samples[0] ? 1 : 0) |
 			(samples[1] ? 2 : 0) |
 			(samples[2] ? 4 : 0) |
 			(samples[3] ? 8 : 0);
 
 		if (caseId == 0 || caseId == 15) {
-			World.current.Destroy(testLine);
-			World.current.Destroy(spheres.ToArray());
 			return; // no segments to draw
 		}
 
@@ -1660,10 +1628,6 @@ class VisNode {
 		} else {
 			//throw new NotImplementedException($"Ambiguous case {caseId} not implemented");
 		}
-		//await Time.WaitSeconds(1.0f);
-		await Time.WaitFrame();
-		World.current.Destroy(testLine);
-		World.current.Destroy(spheres.ToArray());
     }
 
     public async Task<Dictionary<VisFaceNode, List<CMSSegment>>> EvaluateFaces() {
@@ -1691,24 +1655,109 @@ class VisNode {
 
 		Debug.Log($"Found {faces.Count} unique leaf faces");
 
-        foreach (var (face, (faceId, node)) in faces) {
-			List<CMSSegment> segs = new();
-            await EvaluateFace(face, faceId, segs, node.corners, node);
-			faceSegments.Add(face, segs);
-        }
-
-		await Time.WaitSeconds(1.0f);
 		List<Vector3> vertices = new();
 		var visLines = new Line3D(mode: MeshVertexMode.Segments);
 		visLines.Color = Color.BLUE;
-		foreach(var segList in faceSegments.Values) {
-			foreach(var seg in segList) {
-				vertices.Add(seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position);
-				vertices.Add(seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position);
-			}
-		}
-		visLines.Vertices = vertices.ToArray();
 		World.current.CreateInstantly(visLines);
+        void updateSegs(List<CMSSegment> segs) {
+            foreach(var seg in segs) {
+                vertices.Add(seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position);
+                vertices.Add(seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position);
+            }
+            visLines.Vertices = vertices.ToArray();
+        }
+
+        var cam = World.current.ActiveCamera;
+        var oPos = cam.Position;
+        var oRot = cam.Rotation;
+        var forward = Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.UP) * Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.RIGHT) * Vector3.FORWARD;
+
+        foreach (var (face, (faceId, node)) in faces.Take(150)) {
+			List<CMSSegment> segs = new();
+
+            EvaluateFace(face, faceId, segs, node.corners, node, false);
+            faceSegments.Add(face, segs);
+
+            if (segs.Count > 0) {
+                var (pos, rot) = Animate.ObservingTransform(node.min, node.min + new Vector3(node.size), forward, World.current.ActiveCamera as PerspectiveCamera, 1920.0f / 1080.0f);
+
+                Line3D testLine = null;
+                testLine = new Line3D(width: 1, mode: MeshVertexMode.Segments);
+                testLine.Color = Color.MAGENTA;
+                World.current.CreateInstantly(testLine);
+                testLine.Vertices = new Vector3[] {
+                    face.edges[0].s,
+                    face.edges[0].e,
+                    face.edges[1].s,
+                    face.edges[1].e,
+                    face.edges[2].s,
+                    face.edges[2].e,
+                    face.edges[3].s,
+                    face.edges[3].e
+                };
+
+                var flipTable = CMS.edgeFlipTable[faceId];
+                Vector3[] corners = new Vector3[4];
+                corners[0] = !flipTable[0] ? face.edges[0].s : face.edges[0].e;
+                corners[1] = !flipTable[0] ? face.edges[0].e : face.edges[0].s;
+                corners[2] = !flipTable[2] ? face.edges[2].s : face.edges[2].e;
+                corners[3] = !flipTable[2] ? face.edges[2].e : face.edges[2].s;
+                bool[] samples = new bool[4];
+                for (int i = 0; i < 4; i++) {
+                    int corner = CMS.faceCubeCornersXX[faceId, i];
+                    samples[i] = ((node.corners >> corner) & 1) == 1;
+                }
+                Sphere[] spheres = new Sphere[4];
+                for (int i = 0; i < 4; i++) {
+                    spheres[i] = new Sphere(0.05f);
+                    spheres[i].Position = corners[i];
+                    spheres[i].Color = samples[i] ? Color.WHITE : Color.BLACK;
+                    World.current.CreateInstantly(spheres[i]);
+                }
+
+                await Animate.TransformToLimited(cam, pos, rot, 0.5f, 15.0f);
+
+                var segLine2 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
+                segLine2.Color = Color.ORANGE;
+                segLine2.Vertices = segs.SelectMany(seg => new Vector3[] {
+                    seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position,
+                    seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position
+                }).ToArray();
+                await World.current.CreateFadeIn(segLine2, 0.5f);
+                await Animate.Color(segLine2, segLine2.Color, Color.BLUE, 0.5f);
+                World.current.Destroy(segLine2);
+                World.current.Destroy(testLine);
+                World.current.Destroy(spheres.Where(x => x != null).ToArray());
+
+                updateSegs(segs);
+            }
+        }
+
+        await Animate.TransformToLimited(cam, oPos, oRot, 0.5f, 15.0f);
+
+        var segLine3 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
+        segLine3.Color = Color.ORANGE;
+        List<Vector3> segLine3Vertices = new();
+        List<CMSSegment> missingSegs = new();
+        foreach (var (face, (faceId, node)) in faces.Skip(150)) {
+            List<CMSSegment> segs = new();
+            EvaluateFace(face, faceId, segs, node.corners, node, true);
+            faceSegments.Add(face, segs);
+
+            segLine3Vertices.AddRange(segs.SelectMany(seg => new Vector3[] {
+                seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position,
+                seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position
+            }));
+            missingSegs.AddRange(segs);
+        }
+        segLine3.Vertices = segLine3Vertices.ToArray();
+        await World.current.CreateFadeIn(segLine3, 0.5f);
+        await Animate.Color(segLine3, segLine3.Color, Color.BLUE, 0.5f);
+        World.current.Destroy(segLine3);
+        updateSegs(missingSegs);
+
+		await Time.WaitSeconds(1.0f);
+		//visLines.Vertices = vertices.ToArray();
 		await Time.WaitSeconds(1.0f);
 
 		return faceSegments;
@@ -1799,6 +1848,10 @@ class VisNode {
 		List<(Vector3 p, Vector3? n)> vertices = new();
 		List<uint> indices = new();
 		uint vIdx = 0;
+
+        var testMesh = new Mesh();
+        testMesh.Color = Color.CYAN.WithA(0.5f);
+        World.current.CreateInstantly(testMesh);
 
 		void processLoop(int[] loop, VisNode node) {
 			if (loop == null) return;
@@ -1892,14 +1945,22 @@ class VisNode {
 		var testLine = new Line3D(mode: MeshVertexMode.Segments);
 		testLine.Width = 5.1f;
 		testLine.Color = Color.ORANGE;
+        testLine.SortKey.Value = -100;
 		World.current.CreateInstantly(testLine);
 		
 		List<Vector3> testLines2 = new();
 		List<Color> testColors2 = new();
 		var testLine2 = new Line3D(mode: MeshVertexMode.Segments);
 		testLine2.Width = 6.1f;
+        testLine2.SortKey.Value = -50;
 		//testLine2.Color = Color.CYAN;
 		World.current.CreateInstantly(testLine2);
+
+        int doneCount = 0;
+        bool done = false;
+        var cam = World.current.ActiveCamera as PerspectiveCamera;
+        var oPos = cam.Position;
+        var oRot = cam.Rotation;
 
 		async Task recurseCells(VisNode node) {
 			if (node.children[0] == null) { // leaf node
@@ -1911,10 +1972,6 @@ class VisNode {
 				foreach(var seg in currentSegments) {
 					var p1 = seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position;
 					var p2 = seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position;
-					testLines2.Add(p1);
-					testLines2.Add(p2);
-					testColors2.Add(Color.CYAN);
-					testColors2.Add(Color.CYAN);
 				}
 				for(int i = 0; i < 12; i++) {
 					var (si, ei) = CMS.cubeEdgeCorners[i];
@@ -1937,7 +1994,12 @@ class VisNode {
 				testLine2.Vertices = testLines2.ToArray();
 				testLine2.Colors = testColors2.ToArray();
 
+
+                var forward = Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.UP) * Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.RIGHT) * Vector3.FORWARD;
+                var (pos, rot) = Animate.ObservingTransform(node.min, node.min+ new Vector3(node.size), forward, World.current.ActiveCamera as PerspectiveCamera, 1920.0f/1080.0f);
+
 				var (loop1, loop2) = await GetLoops(currentSegments);
+
 				if (loop1 != null) {
 					testLines.Clear();
 					foreach(var idx in loop1) {
@@ -1945,11 +2007,29 @@ class VisNode {
 						testLines.Add(currentSegments[idx].v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v2).position);
 					}
 					testLine.Vertices = testLines.ToArray();
-					await Time.WaitSeconds(1.0f);
+                    if (doneCount < 10) {
+
+                        await Animate.TransformTo(World.current.ActiveCamera, pos, rot, 0.5f);
+                        await Time.WaitSeconds(1.0f);
+                    } else {
+                        await Time.WaitFrame();
+                    }
+
+                    doneCount++;
 				}
+
+                if (doneCount >= 10 && !done) {
+                    await Animate.TransformToLimited(World.current.ActiveCamera, oPos, oRot, 0.5f, 15.0f);
+                    done = true;
+                }
+
 				processLoop(loop1, node);
 				processLoop(loop2, node);
 				currentSegments.Clear();
+
+                testMesh.Vertices = vertices.Select(x => x.p).ToArray();
+                testMesh.Indices = indices.ToArray();
+                
 				World.current.Destroy(spheres.ToArray());
 			} else {
 				foreach(var child in node.children) {
@@ -1960,13 +2040,13 @@ class VisNode {
 		await recurseCells(this);
 
 		Debug.Assert(vertexMap.Values.Select(x => x).Distinct().Count() == vertexMap.Count, "Vertex indices should be unique");
-		var mesh = new Mesh();
-		mesh.Vertices = vertices.Select(x => x.p).ToArray();
-		mesh.Indices = indices.ToArray();
-		mesh.Color = Color.CYAN;
-		mesh.Outline = Color.BLACK;
-		World.current.CreateInstantly(mesh);
-		await Time.WaitSeconds(1.0f);
+        await Animate.Color(testMesh, testMesh.Color, testMesh.Color.WithA(1.0f), 0.5f);
+        World.current.Destroy(testLine);
+        World.current.Destroy(testLine2);
+
+        var orbitTask = Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f + 45.0f, 10.0f); 
+        await orbitTask;
+
 	}
 
     public void GetSegments(List<CMSSegment> outSegments, Dictionary<VisFaceNode, List<CMSSegment>> faceSegments) {
@@ -2190,9 +2270,9 @@ async Task AnimateOctree() {
 
                 normalLineVerts.AddRange(new Vector3[] { intr[0].pos, intr[0].pos + (dir switch { 0 => 0.3f, 1 => 0.4f, 2 => 0.5f, _ => 0.0f })*intr[0].normal });
 				normalLineColors.Add(dir switch {
-					0 => Color.RED,
+					0 => Color.GREEN,
 					1 => Color.GREEN,
-					2 => Color.BLUE,
+					2 => Color.GREEN,
 					_ => Color.WHITE
 				});
 				normalLineColors.Add(normalLineColors.Last());
@@ -2492,12 +2572,6 @@ async Task AnimateOctree() {
 	//var segments = await tree.EvaluateFaces();
 	await tree.ExtractSurface();
 
-    var newTree = new VisNode(tree.min, tree.size);
-    await newTree.SubdivideWithLines(new List<Vector3>(), true);
-	newTree.AssignIntersections(hermiteData);
-	await newTree.EvaluateFaces();
-    newTree.SanityCheck();
-    Debug.Log("Simple sanity check passed!");
     tree.SanityCheck();
     Debug.Log("Full sanity check passed!");
 
