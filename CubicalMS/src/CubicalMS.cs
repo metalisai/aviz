@@ -6,6 +6,11 @@ using System.Threading.Tasks;
 using CommunityToolkit.HighPerformance;
 using MathNet.Numerics.LinearAlgebra;
 using System.Threading;
+using ImgSharp = SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+
+using MyCMS = FasterMarchingSquares;
 
 public class CubicalMS : AnimationBehaviour
 {
@@ -28,7 +33,12 @@ public void Init(AnimationSettings settings) {
     settings.Name = "My animation";
     // animation length must be bounded
     // (it gets "baked" to allow seeking whole animation in editor)
-    settings.MaxLength = 1600.0f; 
+    //settings.MaxLength = 1600.0f; 
+    settings.MaxLength = 1200.0f;
+    //settings.Width = 2560;
+    //settings.Height = 1440;
+    settings.Width = 960;
+    settings.Height = 540;
 }
 
 /*
@@ -45,6 +55,11 @@ static float opUnion(float d1, float d2) {
     return MathF.Min(d1, d2);
 }
 
+static float opSmoothUnion(float d1, float d2, float k = 0.1f) {
+    float h = float.Clamp(0.5f + 0.5f*(d2-d1)/k, 0.0f, 1.0f);
+    return float.Lerp(d2, d1, h) - k*h*(1.0f-h);
+}
+
 static float opSubtract(float d1, float d2) {
     return MathF.Max(-d1, d2);
 }
@@ -56,6 +71,41 @@ static float opXor(float d1, float d2) {
 static float sdSphere(Vector3 p, float r)
 {
     return p.Length - r;
+}
+
+static float sdPyramid(Vector3 position, float halfWidth, float halfDepth, float halfHeight) {
+    position.y += halfHeight;
+    position.x = float.Abs(position.x);
+    position.z = float.Abs(position.z);
+    var d1 = new Vector3(float.Max(position.x - halfWidth, 0.0f), position.y, float.Max(position.z - halfDepth, 0.0f));
+    var n1 = new Vector3(0.0f, halfDepth, 2.0f * halfHeight);
+    float k1 = Vector3.Dot(n1, n1);
+    float h1 = Vector3.Dot(position - new Vector3(halfWidth, 0.0f, halfDepth), n1) / k1;
+    var n2 = new Vector3(k1, 2.0f * halfHeight * halfWidth, -halfDepth * halfWidth);
+    float m1 = Vector3.Dot(position - new Vector3(halfWidth, 0.0f, halfDepth), n2) / Vector3.Dot(n2, n2);
+    var clampV1 = position - n1 * h1 - n2 * float.Max(m1, 0.0f);
+    var clampTo1 = new Vector3(halfWidth, 2.0f * halfHeight, halfDepth);
+    var clamped1 = new Vector3(
+        float.Clamp(clampV1.x, 0.0f, clampTo1.x),
+        float.Clamp(clampV1.y, 0.0f, clampTo1.y),
+        float.Clamp(clampV1.z, 0.0f, clampTo1.z)
+    );
+    var d2 = position - clamped1;
+    var n3 = new Vector3(2.0f * halfHeight, halfWidth, 0.0f);
+    float k2 = Vector3.Dot(n3, n3);
+    float h2 = Vector3.Dot(position - new Vector3(halfWidth, 0.0f, halfDepth), n3) / k2;
+    var n4 = new Vector3(-halfWidth * halfDepth, 2.0f * halfHeight * halfDepth, k2);
+    float m2 = Vector3.Dot(position - new Vector3(halfWidth, 0.0f, halfDepth), n4) / Vector3.Dot(n4, n4);    
+    var clampV = position - n3 * h2 - n4 * float.Max(m2, 0.0f);
+    var clampTo = new Vector3(halfWidth, 2.0f * halfHeight, halfDepth);
+    var clamped = new Vector3(
+        float.Clamp(clampV.x, 0.0f, clampTo.x),
+        float.Clamp(clampV.y, 0.0f, clampTo.y),
+        float.Clamp(clampV.z, 0.0f, clampTo.z)
+    );
+    var d3 = position - clamped;
+    float d = float.Sqrt(float.Min(float.Min(Vector3.Dot(d1, d1), Vector3.Dot(d2, d2)), Vector3.Dot(d3, d3)));
+    return float.Max(float.Max(h1, h2), -position.y) < 0.0 ? -d : d;
 }
 
 static float sdBox(Vector3 p, Vector3 b )
@@ -104,15 +154,25 @@ public static float Evaluate(Vector3 pos) {
     //return torusBox;
 }
 
-public static Vector3 EvaluateNormal(Vector3 pos) {
+public static Vector3 CalcNormal(Func<Vector3, float> evalf, Vector3 pos, float eps = 0.001f) {
+    float dx = evalf(pos + new Vector3(eps, 0, 0)) - evalf(pos - new Vector3(eps, 0, 0));
+    float dy = evalf(pos + new Vector3(0, eps, 0)) - evalf(pos - new Vector3(0, eps, 0));
+    float dz = evalf(pos + new Vector3(0, 0, eps)) - evalf(pos - new Vector3(0, 0, eps));
+    return new Vector3(dx, dy, dz).Normalized;
+}
+
+/*public static Vector3 CalcNormal(Func<Vector3, float> evalf, Vector3 pos, float eps = 0.001f) {
     //return sdTorusNormal(pos);
     // use gradient approximation
-    float eps = 0.001f;
-    float d = Evaluate2(pos);
-    float dx = Evaluate2(pos + new Vector3(eps, 0.0f, 0.0f));
-    float dy = Evaluate2(pos + new Vector3(0.0f, eps, 0.0f));
-    float dz = Evaluate2(pos + new Vector3(0.0f, 0.0f, eps));
+    float d = evalf(pos);
+    float dx = evalf(pos + new Vector3(eps, 0.0f, 0.0f));
+    float dy = evalf(pos + new Vector3(0.0f, eps, 0.0f));
+    float dz = evalf(pos + new Vector3(0.0f, 0.0f, eps));
     return new Vector3(dx - d, dy - d, dz - d).Normalized;
+}*/
+
+public static Vector3 EvaluateNormal(Vector3 pos) {
+    return CalcNormal(Evaluate, pos);
 }
 
 public static (Vector3 s, Vector3 e)[] CellOuterEdges(Vector3 min, float size) {
@@ -346,7 +406,7 @@ static public void MarchSquareComplex(bool[] cornerSamples, Vector2[] intersecti
 
         MSVertex2D[,] potentialVertices = new MSVertex2D[2, 6];
         int[,] potentialSegments = new int[2, 8];
-
+        
         int[] vCounts = new int[2];
         int[] iCounts = new int[2];
 
@@ -444,7 +504,7 @@ public async Task<Line3D> CubicalMarchingSquares2(Vector3[,,] sLoc, float cellSi
 
     var lines = new Line3D();
     lines.Color = Color.YELLOW;
-    lines.Width = 4.0f;
+    lines.Width = 6.0f;
     world.CreateInstantly(lines);
 
     for (int i = 0; i < gridSize; i++)
@@ -583,7 +643,7 @@ public Line3D CubicalMarchingSquares(float[,,] samples, float cellSize, Vector3 
                 var line = new Line3D();
                 line.Color = cornerColors[face]; // DEBUG
                 line.Vertices = [vertexPositions[vi-1], vertexPositions[vi]];
-                line.Width = 4.0f;
+                line.Width = 6.0f;
                 //world.CreateInstantly(line);
             }
         }
@@ -592,7 +652,7 @@ public Line3D CubicalMarchingSquares(float[,,] samples, float cellSize, Vector3 
     var lines = new Line3D();
     lines.Color = Color.ORANGE;
     lines.Vertices = vertices.ToArray();
-    lines.Width = 4.0f;
+    lines.Width = 6.0f;
     return lines;
 
 }
@@ -732,19 +792,19 @@ public Mesh DoCMS() {
     var intrLines = new Line3D();
     intrLines.Color = Color.RED;
     intrLines.Vertices = intersectionsInternal.SelectMany(i => new Vector3[] { i.Item1, i.Item2 }).ToArray();
-    intrLines.Width = 2.0f;
+    intrLines.Width = 3.0f;
     //world.CreateInstantly(intrLines);
 
     var faceLines = new Line3D();
     faceLines.Color = Color.VIOLET;
     faceLines.Vertices = intersectionsFace.SelectMany(i => new Vector3[] { i.Item1, i.Item2 }).ToArray();
-    faceLines.Width = 2.0f;
+    faceLines.Width = 3.0f;
     //world.CreateInstantly(faceLines);
 
     var normalLines = new Line3D();
     normalLines.Color = Color.GREEN;
     normalLines.Vertices = intersectionNormals.SelectMany(i => new Vector3[] { i.Item1, i.Item1 + 0.3f*i.Item2 }).ToArray();
-    normalLines.Width = 3.0f;
+    normalLines.Width = 5.0f;
     //world.CreateInstantly(normalLines);
 
     //await Time.WaitSeconds(1.0f);
@@ -837,18 +897,192 @@ Vector3[] lineQuadVertices = new Vector3[] {
     new Vector3(0.0f, 0.0f, 0.0f),
 };
 
+Text2D titleText;
+
+public async Task Intro() {
+    var bigTitle = new Text2D("Cubical Marching Squares");
+    bigTitle.Color = titleText.Color;
+    bigTitle.Size = 64.0f;
+    bigTitle.Anchor = new Vector2(0.0f, 0.2f);
+    bigTitle.HAlign = TextHorizontalAlignment.Center;
+
+    var subTitle = new Text2D("an isosurface extraction algorithm");
+    subTitle.Size = bigTitle.Size * 0.5f;
+    subTitle.Color = bigTitle.Color * 0.5f;
+    subTitle.HAlign = TextHorizontalAlignment.Center;
+    subTitle.Anchor = bigTitle.Anchor;
+    subTitle.Position = new Vector2(0.0f, -80.0f);
+
+    await Animate.CreateText(bigTitle, mode: TextCreationMode.Fade, charDelay: 0.0f);
+    await Animate.CreateText(subTitle, charDelay: 1.0f/60.0f);
+
+    await Time.WaitSeconds(1.0f);
+
+    //var fadeOther = Animate.Color(bigTitle, titleText.Color, Color.TRANSPARENT, 0.5f);
+    //await Animate.Color(subTitle, subTitle.Color, Color.TRANSPARENT, 0.5f);
+    //await fadeOther;
+
+    var blur = new CanvasBlurEffect(0.0f);
+    Canvas.Default.AddEffect(blur);
+    _ = Animate.Color(bigTitle, bigTitle.Color, bigTitle.Color.WithA(0.0f), 2.0f);
+    _ = Animate.Color(subTitle, subTitle.Color, subTitle.Color.WithA(0.0f), 2.0f);
+    await Animate.InterpT(blur.Radius, 6.0f, 2.0);
+    Canvas.Default.ClearEffects();
+}
+
+public async Task Comparison() {
+    await Animate.ChangeText(titleText, "");
+    await Time.WaitFrame();
+
+    var badColor = Color.RED * 0.7f;
+    var goodColor = Color.GREEN * 0.8f;
+
+    float lineHeight = 37.5f;
+    var compareText = new Text2D("Does not preserve sharp features", size:32.0f);
+    compareText.Color = badColor;
+    compareText.Anchor = new Vector2(0.0f, 0.2f);
+    compareText.Position = new Vector2(-576.0f, 0.0f);
+    var compareText2 = world.Clone(compareText);
+    compareText2.Text = "Ambiguous cases";
+    compareText2.Position += new Vector2(0.0f, -1.0f*lineHeight);
+    var compareText3 = world.Clone(compareText);
+    compareText3.Text = "High triangle count";
+    compareText3.Position += new Vector2(0.0f, -2.0f*lineHeight);
+    var compareText4 = world.Clone(compareText);
+    compareText4.Text = "Scalar data";
+    compareText4.Position += new Vector2(0.0f, -3.0f*lineHeight);
+    compareText4.Color = goodColor;
+    var compareText5 = world.Clone(compareText);
+    compareText5.Text = "One large lookup table";
+    compareText5.Position += new Vector2(0.0f, -4.0f*lineHeight);
+    compareText5.Color = badColor;
+    var compareText6 = world.Clone(compareText);
+    compareText6.Text = "No inter-cell dependency";
+    compareText6.Position += new Vector2(0.0f, -5.0f*lineHeight);
+    compareText6.Color = goodColor;
+
+    var compareText11 = world.Clone(compareText);
+    compareText11.Text = "Sharp features are preserved";
+    compareText11.Position += new Vector2(675.0f, 0.0f);
+    compareText11.Color = goodColor;
+    var compareText22 = world.Clone(compareText2);
+    compareText22.Text = "Solves topological ambiguities";
+    compareText22.Position += new Vector2(675.0f, 0.0f);
+    compareText22.Color = goodColor;
+    var compareText33 = world.Clone(compareText3);
+    compareText33.Text = "Crack-free multi-resolution";
+    compareText33.Position += new Vector2(675.0f, 0.0f);
+    compareText33.Color = goodColor;
+    var compareText44 = world.Clone(compareText4);
+    compareText44.Text = "Hermite data";
+    compareText44.Position += new Vector2(675.0f, 0.0f);
+    compareText44.Color = badColor;
+    var compareText55 = world.Clone(compareText5);
+    compareText55.Text = "Few small lookup tables";
+    compareText55.Position += new Vector2(675.0f, 0.0f);
+    compareText55.Color = goodColor;
+    var compareText66 = world.Clone(compareText6);
+    compareText66.Text = "No inter-cell dependency";
+    compareText66.Position += new Vector2(675.0f, 0.0f);
+    compareText66.Color = goodColor;
+
+    var header1 = world.Clone(compareText);
+    header1.Text = "Marching cubes";
+    header1.Position += new Vector2(-22.5f, 2.0f*lineHeight);
+    header1.Size = 42.0f;
+    header1.Color = titleText.Color;
+    var header2 = world.Clone(compareText);
+    header2.Text = "Cubical marching squares";
+    header2.Position += new Vector2(652.5f, 2.0f*lineHeight);
+    header2.Size = 42.0f;
+    header2.Color = titleText.Color;
+
+    var outlineC = Color.WHITE;
+    float charDelay = 1.0f/60.0f;
+    float textDelay = 60.0f/60.0f;
+    _ = Animate.CreateText(header1, charDelay: charDelay, outline: outlineC);
+
+    await Animate.CreateText(header2, charDelay: charDelay, outline: outlineC);
+
+
+    await Animate.CreateText(compareText, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+    await Animate.CreateText(compareText11, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+
+
+    await Animate.CreateText(compareText2, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+    await Animate.CreateText(compareText22, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+
+    await Animate.CreateText(compareText3, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+    await Animate.CreateText(compareText33, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+
+    await Animate.CreateText(compareText4, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+    await Animate.CreateText(compareText44, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+
+    await Animate.CreateText(compareText5, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+    await Animate.CreateText(compareText55, charDelay: charDelay, outline: outlineC);
+    await Time.WaitSeconds(textDelay);
+
+    _ = Animate.CreateText(compareText6, charDelay: charDelay, outline: outlineC);
+    await Animate.CreateText(compareText66, charDelay: charDelay, outline: outlineC);
+
+    await Time.WaitSeconds(2.0f);
+
+    Vector2 explosionCenter = new Vector2(500.0f, -300.0f);
+    Text2D[] allTexts = [compareText, compareText2, compareText3, compareText4, compareText11, compareText22, compareText33, compareText44, header1, header2, compareText5, compareText55, compareText66, compareText6];
+    List<Task> explodeTasks = new();
+    foreach(var text in allTexts) {
+        var chars = text.CurrentShapes.Select(x => x.s);
+        text.Disband();
+        foreach(var cc in chars) {
+            var outside = (cc.Position - explosionCenter).Normalized;
+            var speed = new Random().NextSingle()*50.0f + 50.0f;
+            explodeTasks.Add( Animate.Offset(cc, cc.Position + speed*30.0f*outside, 50.0f/speed));
+            explodeTasks.Add( Animate.Rotate(cc, 3.1415f*5.0f*new Random().NextSingle(), 30.0f/speed));
+        }
+    }
+    await Task.WhenAll(explodeTasks.ToArray());
+    foreach(var text in allTexts) {
+        world.Destroy(text);
+    }
+}
+
 public async Task Animation(World world, Animator animator) {
-
-    var allEntities = world.BeginCapture();
-
-    Test();
-
-    this.world = world;
-    this.animator = animator;
+    Canvas.Default.Units = CanvasUnits.Points;
+    //Canvas.Default.Dpi = 128;
+    Canvas.Default.Dpi = 48;
 
     var cam = world.ActiveCamera;
     cam.Position = new Vector3(0.0f, 0.0f, -5.0f);
     cam.ClearColor = new Color(0.035f, 0.03f, 0.05f, 1.0f);
+
+    titleText = new Text2D("", size: 36.0f);
+    titleText.Anchor = new Vector2(0.0f, 0.4f);
+    titleText.Position = new Vector2(0.0f, 30.0f);
+    titleText.Color = Color.WHITE * 0.6f;
+    titleText.HAlign = TextHorizontalAlignment.Center;
+
+    await Intro();
+
+    //titleText.
+    world.CreateInstantly(titleText);
+    
+    _ = Animate.ChangeText(titleText, "Marching cubes");
+
+    var allEntities = world.BeginCapture();
+
+    await Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, -20.0f, 0.0f);
+
+    this.world = world;
+    this.animator = animator;
 
     var c1 = new Sphere(0.05f);
     c1.Color = Color.YELLOW;
@@ -871,30 +1105,35 @@ public async Task Animation(World world, Animator animator) {
         }
     }
 
+    var egrid = make3DGrid(new Vector3(-0.5f - 3.0f, -0.5f - 2.0f, -1.0f - 1.0f), 1.0f, 6);
+    var egridLines = new Line3D();
+    egridLines.Color = (Color.WHITE*0.5f).WithA(0.2f);
+    egridLines.Width = 3.0f;
+    egridLines.Vertices = egrid.ToArray();
+    var egridColor = egridLines.Color;
+    await world.CreateFadeIn(egridLines, 1.0f);
+
     for (int i = 0; i < 6; i++) {
         var q = new Line3D();
         q.Vertices =  lineQuadVertices;
         q.Color = Color.BLACK;
-        q.Width = 5.0f;
+        q.Width = 6.0f;
+        q.SortKey.Value = -100;
 
         quads[i] = q;
         q.Position = quadOffset + CMS.quadOffsets[i];
-        world.CreateInstantly(q);
+        _ = world.CreateFadeIn(q, 0.5f);
 
         for (int j = 0; j < 4; j++) {
             var s = world.Clone(c1);
             s.ParentId.Value = q.Id;
             s.Position = new Vector3(faceQuadPositions[i, j], 0.0f);
             var c = cornerColors[CMS.faceCubeCorners[i, j]];
-            s.Color = c;
-            world.CreateInstantly(s);
+            s.Color = Color.BLACK;
+            _ = world.CreateFadeIn(s, 0.5f);
             cornerSpheres[CMS.faceCubeCorners[i, j]].l.Add(s);
             cornerSpheres[CMS.faceCubeCorners[i, j]].c = c;
         }
-    }
-
-    foreach (int i in Enumerable.Range(0, 8)) {
-        setCornerColor(i, Color.BLACK);
     }
 
     quads[5].ParentId.Value = quads[1].Id;
@@ -904,16 +1143,18 @@ public async Task Animation(World world, Animator animator) {
 
     await FoldAll(quadOffset, ps, quads, 0.0f, 0.0f, MathF.PI/2.0f);
 
-    Color exampleCubeColor = (0.5f*Color.ORANGE).WithA(0.5f);
+    Color exampleCubeColor = (0.2f*Color.ORANGE).WithA(1.0f);
 
     var exampleCube = new Cube();
     exampleCube.Color = exampleCubeColor;
-    exampleCube.Position = new Vector3(-17.0f, 0.0f, 0.0f);
-    exampleCube.Scale = new Vector3(10.0f, 10.0f, 10.0f);
-    world.CreateInstantly(exampleCube);
+    exampleCube.Position = new Vector3(-1.5f, 0.0f, 0.0f);
+    exampleCube.Scale = new Vector3(3.0f, 3.0f, 3.0f);
+    _ = world.CreateFadeIn(exampleCube, 0.5f);
 
-    await Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, -20.0f, 1.0f);
-    await Animate.Move(exampleCube, new Vector3(-5.0f, 0.0f, 0.0f));
+    await Time.WaitSeconds(1.0f);
+    await Animate.Color(exampleCube, exampleCubeColor, exampleCubeColor.WithA(0.4f), 1.0f);
+
+    //await Animate.Move(exampleCube, new Vector3(-5.0f, 0.0f, 0.0f));
     await Animate.InterpF(x => {
         var color = Color.Lerp(Color.BLACK, 1.3f*Color.RED, x);
         setCornerColor(0, color);
@@ -940,15 +1181,18 @@ public async Task Animation(World world, Animator animator) {
     }
     await Time.WaitSeconds(1.5f);
 
-    await Animate.Move(exampleCube, (-50.0f, 0.0f, 0.0f));
+    await Animate.Color(exampleCube, exampleCube.Color, exampleCubeColor, 1.0f);
+    await Time.WaitSeconds(0.5f);
+    _ = Animate.Color(egridLines, egridLines.Color, Color.TRANSPARENT, 1.0f);
+    await Animate.Color(exampleCube, exampleCube.Color, exampleCubeColor.WithA(0.0f), 1.0f);
     world.Destroy(exampleCube);
 
     var lines = new Line3D[5];
-    lines[0] = await DrawLine(intersections[0], intersections[1], Color.YELLOW, 3.0f);
-    lines[1] = await DrawLine(intersections[1], intersections[2], Color.YELLOW, 3.0f);
-    lines[2] = await DrawLine(intersections[2], intersections[3], Color.YELLOW, 3.0f);
-    lines[3] = await DrawLine(intersections[3], intersections[0], Color.YELLOW, 3.0f);
-    lines[4] = await DrawLine(intersections[0], intersections[2], Color.YELLOW, 3.0f);
+    lines[0] = await DrawLine(intersections[0], intersections[1], Color.YELLOW, 5.0f);
+    lines[1] = await DrawLine(intersections[1], intersections[2], Color.YELLOW, 5.0f);
+    lines[2] = await DrawLine(intersections[2], intersections[3], Color.YELLOW, 5.0f);
+    lines[3] = await DrawLine(intersections[3], intersections[0], Color.YELLOW, 5.0f);
+    lines[4] = await DrawLine(intersections[0], intersections[2], Color.YELLOW, 5.0f);
 
     var mesh = new Mesh();
     mesh.Outline = Color.YELLOW;
@@ -983,6 +1227,8 @@ public async Task Animation(World world, Animator animator) {
     world.Destroy(mesh);
     await Time.WaitSeconds(0.5f);
 
+    _ = Animate.ChangeText(titleText, "Cubical marching squares");
+
     await FoldAll(quadOffset, ps, quads, 1.0f, MathF.PI/2.0f, 0.0f);
 
     // separete quads
@@ -1008,7 +1254,7 @@ public async Task Animation(World world, Animator animator) {
         };
         line.ParentId.Value = quads[parents[i]].Id;
         line.Color = Color.YELLOW;
-        line.Width = 3.0f;
+        line.Width = 5.0f;
         _ = world.CreateFadeIn(line, 0.5f);
         ilines[i] = line;
     }
@@ -1028,6 +1274,18 @@ public async Task Animation(World world, Animator animator) {
 
     // fold quads
     await FoldAll(quadOffset, ps, quads, 1.0f, 0.0f, MathF.PI/2.0f);
+
+    var xlines = new Line3D[4];
+    var avgI = 0.25f*(intersections[0]+intersections[1]+intersections[2]+intersections[3]);
+    async void drawX(int idx) {
+        xlines[idx] = await DrawLine(intersections[idx], avgI, Color.YELLOW, 5.0f);
+    }
+    drawX(0);
+    drawX(1);
+    drawX(2);
+    drawX(3);
+    await Time.WaitSeconds(1.0f);
+
     mesh.Color = Color.YELLOW;
     mesh.Outline = Color.YELLOW;
     await world.CreateFadeIn(mesh, 0.5f);
@@ -1036,6 +1294,28 @@ public async Task Animation(World world, Animator animator) {
     await Animate.Offset(cam, new Vector3(0.0f, 0.0f, -13.0f));
 
     var msLine = CubicalMarchingSquares();
+
+    // FADE OUT THE CUBE AND QUAD INS STUFF
+    for (int i = 0; i < 6; i++) {
+        _ = Animate.Color(quads[i], quads[i].Color, Color.TRANSPARENT, 0.5f);
+    }
+    for (int i = 0; i < 8; i++) {
+        foreach (var sphere in cornerSpheres[i].l) {
+            _ = Animate.Color(sphere, sphere.Color, Color.TRANSPARENT, 0.5f);
+        }
+    }
+    _ = Animate.Color(mesh, mesh.Color, Color.TRANSPARENT, 0.5f);
+    foreach(var line in ilines) {
+        _ = Animate.Color(line, line.Color, Color.TRANSPARENT, 0.5f);
+    }
+    foreach(var line in lines) {
+        _ = Animate.Color(line, line.Color, Color.TRANSPARENT, 0.5f);
+    }
+    foreach(var line in xlines) {
+        _ = Animate.Color(line, line.Color, Color.TRANSPARENT, 0.5f);
+    }
+
+    _ = Animate.ChangeText(titleText, "Marching cubes mesh");
 
     var orbitTask =  Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f, 15.0f);
 
@@ -1046,6 +1326,8 @@ public async Task Animation(World world, Animator animator) {
     }, 0.0f, 1.0f, 0.5f);
     world.Destroy(msLine);
     await Time.WaitSeconds(0.5f);
+
+    _ = Animate.ChangeText(titleText, "Cubical marching squares mesh");
 
     var cmsMesh = DoCMS();
     var col = cmsMesh.Color;
@@ -1105,6 +1387,17 @@ public async Task Animation(World world, Animator animator) {
     await AnimateAmbiguous3D();
 
     await AnimateOctree();
+
+    await Comparison();
+
+    await Time.WaitSeconds(0.2f);
+    var byeText = new Text2D("Thanks for watching!");
+    byeText.Size = 64.0f;
+    byeText.Anchor = new Vector2(0.0f, 0.2f);
+    byeText.HAlign = TextHorizontalAlignment.Center;
+    byeText.Color = titleText.Color;
+    await Animate.CreateText(byeText);
+    await Time.WaitSeconds(2.0f);
 }
 
 class VisEdgeNode {
@@ -1236,7 +1529,7 @@ class VisFaceNode {
         children[0].edges[3] = edges[3].first;
 		break;
 		}
-
+ 
         // assign internal
 		switch(face) {
 		case 0:
@@ -1405,10 +1698,10 @@ class VisNode {
                 children[cell].faces[face2].edges[quadEdge2] = newEdges[i];
             }
         }
+
         // assign outer edges to new faces
         // yz plane
         children[0].faces[1].edges[0] = faces[4].children[3].edges[1];
-        Debug.Assert(children[1].faces[3].edges[0] == faces[4].children[3].edges[1], "Faces should be connected");
         children[0].faces[1].edges[1] = faces[5].children[0].edges[1];
         children[3].faces[1].edges[1] = faces[5].children[3].edges[1];
         children[3].faces[1].edges[2] = faces[2].children[3].edges[1];
@@ -1442,10 +1735,11 @@ class VisNode {
 
         var lines = CubicalMS.CellInnerEdges(this.min, this.size);
         var verts = lines.SelectMany(l => new Vector3[] { l.Item1, l.Item2 }).ToArray();
-        if (!quick) {
+        if (true || !quick) {
             var transLine = new Line3D(mode: MeshVertexMode.Segments);
             transLine.Color = Color.VIOLET;
             transLine.Vertices = verts;
+            transLine.Width = 5.0f;
             await World.current.CreateFadeIn(transLine, 0.5f);
             await Time.WaitFrame();
             World.current.Destroy(transLine);
@@ -1523,7 +1817,7 @@ class VisNode {
 			int xi = ox + offset.x * step;
 			int yi = oy + offset.y * step;
 			int zi = oz + offset.z * step;
-			bool val = data.signs[xi, yi, zi];
+			bool val = data.isInside[xi, yi, zi];
 			corners |= (byte)(val ? 1 << i : 0);
 		}
 		this.corners = corners;
@@ -1535,6 +1829,12 @@ class VisNode {
                 continue;
             }
 
+            bool[] samples = new bool[4];
+            for (int j = 0; j < 4; j++) {
+                int corner = CMS.faceCubeCornersXX[i, j];
+                samples[j] = ((this.corners >> corner) & 1) == 1;
+            }
+
             for (int j = 0; j < 4; j++) {
                 var edge = face.edges[j];
                 if (edge.intersection.HasValue) {
@@ -1543,6 +1843,7 @@ class VisNode {
                 var edgeIdx = CMS.faceEdgeToCubeEdgeXX[i, j];
                 var intrs = findEdgeIntersections(data, min, size, edgeIdx);
                 if (intrs.Length == 0) {
+                    if (samples[j] != samples[(j+1)%4]) throw new Exception("this edge shoud have intersection!");
                     continue; // no intersection found
 
                 }
@@ -1559,9 +1860,35 @@ class VisNode {
         }
     }
 
-    public record CMSVertex();
-    public record CMSEdgeVertex(VisEdgeNode node) : CMSVertex;
-    public record CMSNewVertex(Vector3 position) : CMSVertex;
+    public abstract class CMSVertex {
+        public abstract override bool Equals(object obj);
+        public abstract override int GetHashCode();
+    }
+
+    public class CMSEdgeVertex : CMSVertex {
+        public VisEdgeNode node { get; set; }
+        public CMSEdgeVertex(VisEdgeNode node) {
+            this.node = node;
+        }
+
+        public override bool Equals(object obj) => obj is CMSEdgeVertex ev ? ReferenceEquals(this.node, ev.node) : false;
+
+        public override int GetHashCode() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(node);
+    }
+
+    public class CMSNewVertex : CMSVertex {
+        public Vector3 position { get; init; }
+
+        public CMSNewVertex(Vector3 position)
+        {
+            this.position = position;
+        }
+
+        public override bool Equals(object obj) => ReferenceEquals(this, obj);
+
+        public override int GetHashCode() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
+    }
+
     public record CMSSegment(CMSVertex v1, CMSVertex v2, VisFaceNode face);
 
     static void EvaluateFace(VisFaceNode face, int faceId, List<CMSSegment> segments, byte cornerBits, VisNode node, bool quick) {	
@@ -1583,52 +1910,97 @@ class VisNode {
 			return; // no segments to draw
 		}
 
-		// ambiguous case
-		if (caseId != 5 && caseId != 10) {
-			// non ambiguous cases always have only 1 segment
-			int startEdge = CMS.quadSegmentsXX[caseId, 0];
-			int endEdge = CMS.quadSegmentsXX[caseId, 1];
-
-			var e1 = new CMSEdgeVertex(face.edges[startEdge]);
-			var e2 = new CMSEdgeVertex(face.edges[endEdge]);
-			// NOTE: always use leaf nodes
-			//   this is because a parent would be considered a different node, even though they point to same intersection
-			//   when detecing segment loops this is important
-			//   otherwise transition cells don't connect properly
-			var intr1 = e1.node.getIntersectionWithEdge();
+        Vector3? getSharpFeature(CMSEdgeVertex e1, CMSEdgeVertex e2) {
+            // NOTE: always use leaf nodes
+            //   this is because a parent would be considered a different node, even though they point to same intersection
+            //   when detecing segment loops this is important
+            //   otherwise transition cells don't connect properly
+            var intr1 = e1.node.getIntersectionWithEdge();
 			var intr2 = e2.node.getIntersectionWithEdge();
-			Debug.Assert(intr1 != null && intr1.HasValue, $"Intersection for edge {startEdge} not found");
-			Debug.Assert(intr2 != null && intr2.HasValue, $"Intersection for edge {endEdge} not found");
-			e1 = intr1 == null ? null : new CMSEdgeVertex(intr1.Value.e);
-			e2 = intr2 == null ? null : new CMSEdgeVertex(intr2.Value.e);
-
+			Debug.Assert(intr1 != null && intr1.HasValue, $"Intersection for edge {e1} not found");
+			Debug.Assert(intr2 != null && intr2.HasValue, $"Intersection for edge {e2} not found");
+			e1.node = intr1 == null ? e1.node : intr1.Value.e;
+			e2.node = intr2 == null ? e2.node : intr2.Value.e;
 			var n1 = CMS.CubeDirToFaceDirXX(faceId, intr1.Value.n);
 			var n2 = CMS.CubeDirToFaceDirXX(faceId, intr2.Value.n);
-			var t1 = n1.PerpCw;
+            bool haveNan = n1.ContainsNan || n2.ContainsNan;
+            var t1 = n1.PerpCw;
 			var t2 = n2.PerpCcw;
 			var det = t1.x * t2.y - t1.y * t2.x;
-			// normals nearly parallel, no sharp feature
-			if (Vector2.Dot(n1, n2) >= SHARP_FEATURE_ANGLE_THRESHOLD || det == 0.0f) {
-				var seg = new CMSSegment(e1, e2, face);
-				segments.Add(seg);
-			} else {
-				var p1 = CMS.CubePosToFacePosXX(faceId, intr1.Value.p - min, size);
+            if (haveNan || float.Abs(det) < 1e-6 || Vector2.Dot(n1, n2) >= SHARP_FEATURE_ANGLE_THRESHOLD) {
+                return null;
+            } else {
+                var p1 = CMS.CubePosToFacePosXX(faceId, intr1.Value.p - min, size);
 				var p2 = CMS.CubePosToFacePosXX(faceId, intr2.Value.p - min, size);
 				var t = (t2.y*(p2.x-p1.x) - t2.x*(p2.y-p1.y)) / det;
 				var p3 = p1 + t * t1;
 				p3.x = float.Clamp(p3.x, 0.0f, size);
 				p3.y = float.Clamp(p3.y, 0.0f, size);
 				var p3World = min + CMS.FacePosToCubePosXX(faceId, p3, size);
-				var newVert = new CMSNewVertex(p3World);
-				var seg1 = new CMSSegment(e1, newVert, face);
-				var seg2 = new CMSSegment(newVert, e2, face);
-				segments.Add(seg1);
-				segments.Add(seg2);
+                return p3World;
+            }
+        }
+
+		// ambiguous case
+		if (caseId != 5 && caseId != 10) {
+			// non ambiguous cases always have only 1 segment
+			int startEdge = CMS.quadSegmentsXX[caseId, 0];
+			int endEdge = CMS.quadSegmentsXX[caseId, 1];
+			var e1 = new CMSEdgeVertex(face.edges[startEdge]);
+			var e2 = new CMSEdgeVertex(face.edges[endEdge]);
+            Vector3? sharpFeature = getSharpFeature(e1, e2);
+			if (!sharpFeature.HasValue) {
+				var seg = new CMSSegment(e1, e2, face);
+				segments.Add(seg);
+			} else {
+				var newVert = new CMSNewVertex(sharpFeature.Value);
+                if (e1.node.getIntersection().Value.p == newVert.position || e2.node.getIntersection().Value.p == newVert.position) {
+                    segments.Add(new CMSSegment(e1, e2, face));
+                } else {
+                    segments.Add(new CMSSegment(e1, newVert, face));
+                    segments.Add(new CMSSegment(newVert, e2, face));
+                }
 			}
 		} else {
-			//throw new NotImplementedException($"Ambiguous case {caseId} not implemented");
+            int startEdge1 = CMS.quadSegmentsXX[caseId, 0];
+			int endEdge1 = CMS.quadSegmentsXX[caseId, 1];
+            int startEdge2 = CMS.quadSegmentsXX[caseId, 2];
+            int endEdge2 = CMS.quadSegmentsXX[caseId, 3];
+			var e1 = new CMSEdgeVertex(face.edges[startEdge1]);
+			var e2 = new CMSEdgeVertex(face.edges[endEdge1]);
+			var e3 = new CMSEdgeVertex(face.edges[startEdge2]);
+			var e4 = new CMSEdgeVertex(face.edges[endEdge2]);
+            Vector3? sharpFeature1 = getSharpFeature(e1, e2);
+            Vector3? sharpFeature2 = getSharpFeature(e3, e4);
+            sharpFeature1 = null;
+            sharpFeature2 = null;
+            if (!sharpFeature1.HasValue) {
+                segments.Add(new CMSSegment(e1, e2, face));
+            } else {
+                var newVert = new CMSNewVertex(sharpFeature1.Value);
+                if (e1.node.getIntersection().Value.p == newVert.position || e2.node.getIntersection().Value.p == newVert.position) {
+                    segments.Add(new CMSSegment(e1, e2, face));
+                } else {
+                    segments.Add(new CMSSegment(e1, newVert, face));
+                    segments.Add(new CMSSegment(newVert, e2, face));
+                }
+            }
+            if (!sharpFeature2.HasValue) {
+                segments.Add(new CMSSegment(e3, e4, face));
+            } else {
+                var newVert = new CMSNewVertex(sharpFeature2.Value);
+                if (e3.node.getIntersection().Value.p == newVert.position || e4.node.getIntersection().Value.p == newVert.position) {
+                    segments.Add(new CMSSegment(e3, e4, face));
+                } else {
+                    segments.Add(new CMSSegment(e3, newVert, face));
+                    segments.Add(new CMSSegment(newVert, e4, face));
+                }
+            }
+            // TODO: check if intersect, use alternative segments if do
 		}
     }
+
+    Line3D visLines;
 
     public async Task<Dictionary<VisFaceNode, List<CMSSegment>>> EvaluateFaces() {
         // Find all unique leaf faces
@@ -1656,8 +2028,9 @@ class VisNode {
 		Debug.Log($"Found {faces.Count} unique leaf faces");
 
 		List<Vector3> vertices = new();
-		var visLines = new Line3D(mode: MeshVertexMode.Segments);
+		visLines = new Line3D(mode: MeshVertexMode.Segments);
 		visLines.Color = Color.BLUE;
+        visLines.Width = 5.0f;
 		World.current.CreateInstantly(visLines);
         void updateSegs(List<CMSSegment> segs) {
             foreach(var seg in segs) {
@@ -1684,6 +2057,8 @@ class VisNode {
                 Line3D testLine = null;
                 testLine = new Line3D(width: 1, mode: MeshVertexMode.Segments);
                 testLine.Color = Color.MAGENTA;
+                testLine.SortKey.Value = -100;
+                testLine.Width = 6.0f;
                 World.current.CreateInstantly(testLine);
                 testLine.Vertices = new Vector3[] {
                     face.edges[0].s,
@@ -1717,12 +2092,14 @@ class VisNode {
 
                 await Animate.TransformToLimited(cam, pos, rot, 0.5f, 5.0f);
 
-                var segLine2 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
+                var segLine2 = new Line3D(width: 3.0f, mode: MeshVertexMode.Segments);
                 segLine2.Color = Color.ORANGE;
+                segLine2.Width = 5.0f;
                 segLine2.Vertices = segs.SelectMany(seg => new Vector3[] {
                     seg.v1 is CMSEdgeVertex ev1 ? ev1.node.getIntersection().Value.p : ((CMSNewVertex)seg.v1).position,
                     seg.v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)seg.v2).position
                 }).ToArray();
+                segLine2.SortKey.Value = -2000;
                 await World.current.CreateFadeIn(segLine2, 0.5f);
                 await Animate.Color(segLine2, segLine2.Color, Color.BLUE, 0.5f);
                 World.current.Destroy(segLine2);
@@ -1737,6 +2114,7 @@ class VisNode {
 
         var segLine3 = new Line3D(width: 1.0f, mode: MeshVertexMode.Segments);
         segLine3.Color = Color.ORANGE;
+        segLine3.Width = 5.0f;
         List<Vector3> segLine3Vertices = new();
         List<CMSSegment> missingSegs = new();
         foreach (var (face, (faceId, node)) in faces.Skip(150)) {
@@ -1756,9 +2134,7 @@ class VisNode {
         World.current.Destroy(segLine3);
         updateSegs(missingSegs);
 
-		await Time.WaitSeconds(1.0f);
-		//visLines.Vertices = vertices.ToArray();
-		await Time.WaitSeconds(1.0f);
+		await Time.WaitSeconds(2.0f);
 
 		return faceSegments;
     }
@@ -1793,7 +2169,30 @@ class VisNode {
 
 				if (nextSeg == null) {
 					Debug.Error($"No next segment found for vertex {current}. This should not happen.");
-					Debug.Log($"All segments: {string.Join(", ", segments.Select(s => $"({((CMSEdgeVertex)(s.v1)).node.s} {((CMSEdgeVertex)(s.v1)).node.e}) p{((CMSEdgeVertex)(s.v1)).node.getIntersection().Value.p} -TO- ({((CMSEdgeVertex)(s.v2)).node.s} {((CMSEdgeVertex)(s.v2)).node.e}) p{((CMSEdgeVertex)(s.v2)).node.getIntersection().Value.p}"))}");
+                    string printSeg(CMSVertex v) {
+                        if (v is CMSEdgeVertex ve) {
+                            return $"(p{ve.node.getIntersection().Value.p} ({ve.node.GetHashCode()} {ve.node.isLeaf})";
+                        } else if(v is CMSNewVertex vn) {
+                            return $"NV {vn.position} {vn.GetHashCode()}";
+                        } else return "??";
+                    }
+					Debug.Log($"All segments: {string.Join(", ", segments.Select(s => $" {printSeg(s.v1)} -TO- {printSeg(s.v2)}"))}");
+                    foreach (var vtx in segments.SelectMany(x => (CMSVertex[])[x.v1, x.v2])) {
+                        var sphere = new Sphere(0.15f);
+                        if (vtx is CMSEdgeVertex evtx) {
+                            sphere.Position = evtx.node.getIntersection().Value.p;
+                            sphere.Color = Color.MAGENTA;
+                        } else if (vtx is CMSNewVertex nvtx) {
+                            sphere.Position = nvtx.position;
+                            sphere.Color = Color.CYAN;
+                        }
+                        World.current.CreateInstantly(sphere);
+                    }
+                    for (int i = 0; i < segments.Count; i++) {
+                        var v1 = segments[i].v2;
+                        var v2 = segments[(i+1)%segments.Count].v1;
+                        Debug.Log($"{v1.Equals(v2)} {v1.GetHashCode()} {v2.GetHashCode()}");
+                    }
 					await Time.WaitSeconds(1700.0f);
 					break; // dead end or loop complete
 				}
@@ -1801,9 +2200,9 @@ class VisNode {
 				usedSegments.Add(nextSeg);
 				loop.Add(segments.IndexOf(nextSeg));
 
-				CMSVertex next = nextSeg.v1 == current ? nextSeg.v2 : nextSeg.v1;
+				CMSVertex next = nextSeg.v1.Equals(current) ? nextSeg.v2 : nextSeg.v1;
 
-				if (next == start)
+				if (next.Equals(start))
 				{
 					// closed loop
 					break;
@@ -1838,10 +2237,14 @@ class VisNode {
 				}
 			}
 		}
+        if (usedSegments.Count < segments.Count) {
+            Debug.Error($"used: {usedSegments.Count} / {segments.Count}");
+            //await Time.WaitSeconds(1800.0f);
+        }
 		return ret;
 	}
 
-	public async Task ExtractSurface() {
+	public async Task<Mesh> ExtractSurface(Text2D titleText) {
 		List<CMSSegment> currentSegments = new();
 		var faceSegments = await EvaluateFaces();
 		Dictionary<CMSVertex, uint> vertexMap = new();
@@ -1850,11 +2253,15 @@ class VisNode {
 		uint vIdx = 0;
 
         var testMesh = new Mesh();
-        testMesh.Color = Color.CYAN.WithA(0.5f);
+        testMesh.Color = Color.BROWN;
+        testMesh.Outline = Color.BLACK;
+        testMesh.SortKey.Value = -1000;
         World.current.CreateInstantly(testMesh);
 
-		void processLoop(int[] loop, VisNode node) {
-			if (loop == null) return;
+        _ = Animate.ChangeText(titleText, "CMS step 5: extract surface");
+
+		(Vector3, int)? processLoop(int[] loop, VisNode node) {
+			if (loop == null) return null;
 			Vector3 massPoint = Vector3.ZERO;
 			float mass = 0.0f;
 			List<uint> curIndices = new();
@@ -1864,9 +2271,17 @@ class VisNode {
 				if (!vertexMap.ContainsKey(v)) {
 					if (v is CMSEdgeVertex ev) {
 						var intr = ev.node.getIntersection();
+                        if (intr.Value.p.ContainsNan)
+                        {
+                            throw new Exception($"NAN in EdgeVertex {node.min} {node.size}");
+                        }
 						vertices.Add((intr.Value.p, intr.Value.n));
 					} else if(v is CMSNewVertex nv) {
 						vertices.Add((nv.position, null));
+                        if (nv.position.ContainsNan)
+                        {
+                            throw new Exception($"NAN in NewVertex {node.min} {node.size}");
+                        }
 					} else throw new NotImplementedException();
 					massPoint += vertices.Last().p;
 					vertexMap[v] = vIdx;	
@@ -1898,8 +2313,10 @@ class VisNode {
 			// calculate mass point
 			massPoint *= 1.0f / mass;
 			Vector3 newVertex;
+            int sharpCase = 0;
 			if (minCos > 0.9f) { // no sharp feature
 				newVertex = massPoint;
+                sharpCase = 1;
 			} else {
 				// calculate sharp feature
 				var validVertices = curIndices
@@ -1928,8 +2345,10 @@ class VisNode {
 					p.y < node.min.y || p.y > node.min.y + node.size ||
 					p.z < node.min.z || p.z > node.min.z + node.size) {
 					newVertex = massPoint;
+                    sharpCase = 3;
 				} else {
 					newVertex = p;
+                    sharpCase = 2;
 				}
 			}
 			uint mpIdx = vIdx++;
@@ -1939,11 +2358,13 @@ class VisNode {
 				indices.Add(curIndices[i + 1]);
 				indices.Add(mpIdx);
 			}
+            return (newVertex, sharpCase);
 		}
 
 		List<Vector3> testLines = new();
+        List<Color> testColors = new();
 		var testLine = new Line3D(mode: MeshVertexMode.Segments);
-		testLine.Width = 5.1f;
+		testLine.Width = 6.1f;
 		testLine.Color = Color.ORANGE;
         testLine.SortKey.Value = -100;
 		World.current.CreateInstantly(testLine);
@@ -2000,31 +2421,77 @@ class VisNode {
 
 				var (loop1, loop2) = await GetLoops(currentSegments);
 
-				if (loop1 != null) {
-					testLines.Clear();
-					foreach(var idx in loop1) {
-						testLines.Add(currentSegments[idx].v1 is CMSEdgeVertex ev ? ev.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v1).position);
-						testLines.Add(currentSegments[idx].v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v2).position);
-					}
-					testLine.Vertices = testLines.ToArray();
-                    if (doneCount < 10) {
-
-                        await Animate.TransformToLimited(World.current.ActiveCamera, pos, rot, 0.5f, 5.0f);
-                        await Time.WaitSeconds(1.0f);
-                    } else {
-                        await Time.WaitFrame();
-                    }
-
-                    doneCount++;
-				}
 
                 if (doneCount >= 10 && !done) {
                     await Animate.TransformToLimited(World.current.ActiveCamera, oPos, oRot, 0.5f, 5.0f);
                     done = true;
                 }
 
-				processLoop(loop1, node);
-				processLoop(loop2, node);
+				var sharp1 = processLoop(loop1, node);
+                if (sharp1.HasValue) {
+                    var sharpSphere = new Sphere(0.03f);
+                    sharpSphere.Position = sharp1.Value.Item1;
+                    sharpSphere.Color = sharp1.Value.Item2 switch {
+                        /*0 => Color.BLACK,
+                        1 => Color.VIOLET,
+                        2 => Color.YELLOW,
+                        3 => Color.RED,*/
+                        _ => Color.YELLOW,
+                    };
+                    World.current.CreateInstantly(sharpSphere);
+                    spheres.Add(sharpSphere);
+                }
+				var sharp2 = processLoop(loop2, node);
+                if (sharp2.HasValue) {
+                    var sharpSphere = new Sphere(0.03f);
+                    sharpSphere.Position = sharp2.Value.Item1;
+                    sharpSphere.Color = sharp2.Value.Item2 switch {
+                        /*0 => Color.BLACK,
+                        1 => Color.VIOLET,
+                        2 => Color.YELLOW,
+                        3 => Color.RED,*/
+                        _ => Color.YELLOW,
+                    };
+                    World.current.CreateInstantly(sharpSphere);
+                    spheres.Add(sharpSphere);
+                }
+
+				if (loop1 != null) {
+					testLines.Clear();
+                    testColors.Clear();
+					foreach(var idx in loop1) {
+						testLines.Add(currentSegments[idx].v1 is CMSEdgeVertex ev ? ev.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v1).position);
+						testLines.Add(currentSegments[idx].v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v2).position);
+                        testColors.Add(Color.ORANGE);
+                        testColors.Add(Color.ORANGE);
+					}
+					testLine.Vertices = testLines.ToArray();
+                    testLine.Colors = testColors.ToArray();
+                }
+				if (loop2 != null) {
+					testLines.Clear();
+                    testColors.Clear();
+					foreach(var idx in loop2) {
+						testLines.Add(currentSegments[idx].v1 is CMSEdgeVertex ev ? ev.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v1).position);
+						testLines.Add(currentSegments[idx].v2 is CMSEdgeVertex ev2 ? ev2.node.getIntersection().Value.p : ((CMSNewVertex)currentSegments[idx].v2).position);
+                        testColors.Add(Color.VIOLET);
+                        testColors.Add(Color.VIOLET);
+					}
+					testLine.Vertices = testLines.ToArray();
+                    testLine.Colors = testColors.ToArray();
+                
+				}
+
+                if (loop1 != null || loop2 != null) {
+                    if (doneCount < 10) {
+                        await Animate.TransformToLimited(World.current.ActiveCamera, pos, rot, 0.5f, 5.0f);
+                        await Time.WaitSeconds(1.0f);
+                    } else {
+                        await Time.WaitFrame();
+                    }
+                    doneCount++;
+                }
+
 				currentSegments.Clear();
 
                 testMesh.Vertices = vertices.Select(x => x.p).ToArray();
@@ -2044,9 +2511,10 @@ class VisNode {
         World.current.Destroy(testLine);
         World.current.Destroy(testLine2);
 
-        var orbitTask = Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f + 45.0f, 10.0f); 
-        await orbitTask;
+        await Animate.Color(visLines, visLines.Color, Color.TRANSPARENT, 0.5f);
+        World.current.Destroy(visLines);
 
+        return testMesh;
 	}
 
     public void GetSegments(List<CMSSegment> outSegments, Dictionary<VisFaceNode, List<CMSSegment>> faceSegments) {
@@ -2123,7 +2591,7 @@ static (Vector3 p, Vector3 n)[] findEdgeIntersections(List<(Vector3 v, Vector3 n
 
 public class HermiteData {
 	public (Vector3 p, Vector3 n)?[,,,] intersections;
-	public bool[,,] signs;
+	public bool[,,] isInside;
 	public Vector3 offset;
 	public float step;
 
@@ -2132,14 +2600,14 @@ public class HermiteData {
 		this.step = step;
 
 		var gp1 = gridSize+1;
-		signs = new bool[gp1, gp1, gp1];
+		isInside = new bool[gp1, gp1, gp1];
 		intersections = new (Vector3, Vector3)?[3, gp1, gp1, gridSize];
 		// eval grid
 		for (int i = 0; i < gp1; i++)
 		for (int j = 0; j < gp1; j++)
 		for (int k = 0; k < gp1; k++) {
 			var location = new Vector3(offset.x + i * step, offset.y + j * step, offset.z + k * step);
-			signs[i, j, k] = eval(location) >= 0.0f;
+			isInside[i, j, k] = eval(location) <= 0.0f;
 		}
 
 		for (int dir = 0; dir < 3; dir++) {
@@ -2147,15 +2615,15 @@ public class HermiteData {
 			for (int i = 0; i < gp1; i++) {
 				for (int j = 0; j < gp1; j++) {
 					var sample1 = dir switch {
-						0 => signs[k, i, j],
-						1 => signs[i, k, j],
-						2 => signs[i, j, k],
+						0 => isInside[k, i, j],
+						1 => isInside[i, k, j],
+						2 => isInside[i, j, k],
 						_ => false
 					};
 					var sample2 = dir switch {
-						0 => signs[k+1, i, j],
-						1 => signs[i, k+1, j],
-						2 => signs[i, j, k+1],
+						0 => isInside[k+1, i, j],
+						1 => isInside[i, k+1, j],
+						2 => isInside[i, j, k+1],
 						_ => false
 					};
 					if (sample1 == sample2) continue;
@@ -2190,6 +2658,54 @@ public class HermiteData {
 	}
 }
 
+class SDF {
+    float[,] sdf;
+    Rect rect;
+    float thickness;
+
+    public SDF(float[,] sdf, Rect rect, float thickness) {
+        this.sdf = sdf;
+        this.rect = rect;
+        this.thickness = thickness;
+    }
+
+    public float sample(Vector3 queryPos) {
+        Vector2 clampedPos = new Vector2(
+            Math.Clamp(queryPos.x, rect.x, rect.x + rect.width),
+            Math.Clamp(queryPos.y, rect.y, rect.y + rect.height)
+        );
+        float imgX = ((clampedPos.x - rect.x) / rect.width) * sdf.GetLength(1);
+        float imgY = (1.0f - ((clampedPos.y - rect.y) / rect.height)) * sdf.GetLength(0);
+        
+        int x1 = int.Clamp((int)float.Floor(imgX), 0, sdf.GetLength(1)-1);
+        int y2 = int.Clamp((int)float.Floor(imgY), 0, sdf.GetLength(0)-1);
+        int x2 = int.Clamp((int)float.Ceiling(imgX), 0, sdf.GetLength(1)-1);
+        int y1 = int.Clamp((int)float.Ceiling(imgY), 0, sdf.GetLength(0)-1);
+
+        var q11 = sdf[y1, x1];
+        var q12 = sdf[y2, x1];
+        var q21 = sdf[y1, x2];
+        var q22 = sdf[y2, x2];
+
+        float result;
+        if (x1 != x2 && y1 != y2) {
+            result = (1.0f / ((x2 - x1)*(y2 - y1))) * (q11*(x2-imgX)*(y2-imgY) + q12*(x2-imgX)*(imgY-y1) + q21*(imgX-x1)*(y2-imgY) + q22*(imgX - x1)*(imgY - y1));
+        } else if (x1 == x2 && y1 == y2) {
+            result = q11;
+        } else if (x1 == x2) {
+            result = (1.0f / (y2 - y1)) * (q11 * (y2 - imgY) + q12 * (imgY - y1));
+        } else {
+            result = (1.0f / (x2 - x1)) * (q11 * (x2 - imgX) + q21 * (imgX - x1));
+        }
+
+        float extraDist2D = (queryPos.xy - clampedPos).Length;
+        float dist2D = extraDist2D + result;
+
+
+        return float.Max(dist2D, float.Abs(queryPos.z) - (thickness/2.0f));
+    }
+}
+
 async Task AnimateOctree() {
     var offset = new Vector3(-8.0f);
     int gCount = 16;
@@ -2200,12 +2716,14 @@ async Task AnimateOctree() {
     cam.Rotation = Quaternion.LookRotation(Vector3.FORWARD, Vector3.UP);
     var orbitTask = Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f, 10.0f); 
 
+    _ = Animate.ChangeText(titleText, "CMS step 1: hermite data");
+
     var grid = make3DGrid(offset, gSize, gCount);
     var gridLines = new Line3D();
     gridLines.Color = new Color(0.05f, 0.05f, 0.05f, 0.5f);
-    gridLines.Width = 1.0f;
+    gridLines.Width = 5.0f;
     gridLines.Vertices = grid.ToArray();
-    await world.CreateFadeIn(gridLines, 1.0f);
+    //await world.CreateFadeIn(gridLines, 1.0f);
 
     await Time.WaitSeconds(3.0f);
 
@@ -2213,7 +2731,104 @@ async Task AnimateOctree() {
         return GetIntersections(pos, Evaluate, EvaluateNormal);
     };
 
-	var hermiteData = new HermiteData(Evaluate, EvaluateNormal, offset, gSize, gCount);
+    var sw = new System.Diagnostics.Stopwatch();
+    sw.Start();
+
+    using var fs = System.IO.File.OpenRead("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc");
+    animator.LoadFont(fs, "notofont");
+    var shapes = animator.ShapeText("忍", Vector2.ZERO, 24, font: "notofont");
+    //var shapes = animator.ShapeText("a", Vector2.ZERO, 24, font: "notofont");
+    var mPath = shapes[0].s.Path;
+    var (sdf, rect) = ShapePath.CalculateSDF(mPath, 512, 32, linearizationSteps: 100);
+
+    var shapes2 = animator.ShapeText("愛", Vector2.ZERO, 24, font: "notofont");
+    var mPath2 = shapes2[0].s.Path;
+    var (sdf2, rect2) = ShapePath.CalculateSDF(mPath2, 512, 32, linearizationSteps: 100);
+    Debug.Log($"Generating SDF took {sw.Elapsed.TotalSeconds} seconds");
+    sw.Reset();
+    sw.Start();
+
+    var mySdf = new SDF(sdf, rect, 19.2f);
+    var mySdf2 = new SDF(sdf2, rect2, 19.2f);
+
+    var myFunc = (Vector3 pos) => float.Lerp(mySdf.sample((pos-offset)*2.5f + new Vector3(rect.x - 8.0f, rect.y - 10.0f, -10.0f)), mySdf2.sample((pos-offset)*2.5f + new Vector3(rect.x - 8.0f, rect.y - 10.0f, -10.0f)), float.Clamp((pos.z+8f)/5.0f, 0.0f, 1.0f));
+    //var myFunc = (Vector3 pos) => mySdf.sample((pos-offset)*2.5f + new Vector3(rect.x - 8.0f, rect.y - 10.0f, -10.0f));
+
+    var myFuncLast = (Vector3 pos) => opSubtract(sdSphere(pos-new Vector3(3.0f), 8.0f) ,opSubtract(mySdf.sample((pos-offset)*2.5f + new Vector3(rect.x - 8.0f, rect.y - 10.0f, -0.5f)), sdBox(pos-new Vector3(0.0f, 1.0f, 0.0f), new Vector3(6.11111111111f, 5.111111111f, 6.1111111111111f))));
+    var myFuncLast2 = (System.Numerics.Vector3 pos) => myFuncLast(pos);
+    Func<System.Numerics.Vector3, System.Numerics.Vector3> myFuncLast2Normal = (pos) => CalcNormal(myFuncLast, pos, eps: 0.0033f);
+
+    var myFunc2 = (Vector3 pos) => opSubtract(myFunc(pos), Evaluate(pos));
+	//var hermiteData = new HermiteData(myFunc, (pos) => CalcNormal(myFunc, pos, eps: 0.0033f), offset, gSize, gCount);
+    var hermiteData = new HermiteData(Evaluate, EvaluateNormal, offset, gSize, gCount);
+    int hermiteDepth = 4;
+    Debug.Log($"Generating hermite data took {sw.Elapsed.TotalMilliseconds} ms");
+
+
+    var myFunc3 = (System.Numerics.Vector3 pos) => myFunc(pos);
+
+    Func<System.Numerics.Vector3, System.Numerics.Vector3> myFunc3Normal = (pos) => CalcNormal(myFunc, pos, eps: 0.0033f);
+    var hermiteData2 = MyCMS.HermiteData.FromSdf(myFunc3, myFunc3Normal, offset, gSize*0.25f, 4*gCount);
+
+    sw.Reset();
+    sw.Start();
+    (System.Numerics.Vector3[] vertices, int[] indices) jmesh = ([], []);
+    MyCMS.CMSTree fastTree;
+    int triCount = 0;
+    for (int i = 0; i < 10; i++) {
+        fastTree = new MyCMS.CMSTree(hermiteData2);
+        fastTree.Subdivide(2);
+        jmesh = fastTree.ExtractSurface();
+        triCount = jmesh.indices.Length / 3;
+    }
+    Console.WriteLine($"Generating NewCMS mesh took {sw.Elapsed.TotalMilliseconds} ms, {triCount} triangles");
+
+    /*
+    var herms = new Line3D(mode: MeshVertexMode.Segments);
+    herms.Color = Color.RED;
+    List<Vector3> hermList = new();
+    List<Color> hermColors = new();
+    for (int i = 0; i < gCount*4; i++)
+    for (int j = 0; j < gCount*4; j++) 
+    for (int k = 0; k < gCount*4; k++) {
+        if (true) {
+        var xher = hermiteData.intersections[0, i, j, k];
+        if (xher.HasValue) {
+            hermList.Add(xher.Value.p);
+            hermList.Add(xher.Value.p + xher.Value.n*0.1f);
+            hermColors.Add(Color.RED);
+            hermColors.Add(Color.RED);
+        }
+        var yher = hermiteData.intersections[1, i, j, k];
+        if (yher.HasValue) {
+            hermList.Add(yher.Value.p);
+            hermList.Add(yher.Value.p + yher.Value.n*0.1f);
+            hermColors.Add(Color.GREEN);
+            hermColors.Add(Color.GREEN);
+        }
+
+        var zher = hermiteData.intersections[2, i, j, k];
+        if (zher.HasValue) {
+            hermList.Add(zher.Value.p);
+            hermList.Add(zher.Value.p + zher.Value.n*0.1f);
+            hermColors.Add(Color.BLUE);
+            hermColors.Add(Color.BLUE);
+        }
+        } else {
+            if (k*gSize*0.25f < 4.0f || k*gSize*0.25f > 4.1f) continue;
+            var p = new Vector3(i*gSize*0.25f, j*gSize*0.25f, k*gSize*0.25f);
+            var hval = hermiteData.signs[i,j,k];
+            hermList.Add(p);
+            hermList.Add(p + Vector3.UP*0.1f);
+            hermColors.Add(hval ? Color.WHITE : Color.BLACK);
+            hermColors.Add(hval ? Color.WHITE : Color.BLACK);
+        }
+    }
+    herms.Vertices = hermList.ToArray();
+    herms.Colors = hermColors.ToArray();
+    world.CreateInstantly(herms);
+    await Time.WaitSeconds(2000.0f);
+    */
 
     Vector3 getOffset(int dir, int i, int j, int k) {
         return dir switch {
@@ -2229,12 +2844,12 @@ async Task AnimateOctree() {
     // find all intersections
     var intersections = new (Vector3 v, Vector3 n)?[3, gCount+1, gCount+1, gCount+1];
     var tempLine = new Line3D();
-    tempLine.Width = 2.0f;
+    tempLine.Width = 5.0f;
     tempLine.Color = Color.YELLOW;
     world.CreateInstantly(tempLine);
 
     var normalLines = new Line3D(); 
-    normalLines.Width = 2.0f;
+    normalLines.Width = 5.0f;
     normalLines.Color = Color.GREEN;
     world.CreateInstantly(normalLines);
 
@@ -2285,7 +2900,7 @@ async Task AnimateOctree() {
         }
             if (normalLineVerts.Count > oldNormalCount) {
                 normalLines.Vertices = normalLineVerts.ToArray();
-				normalLines.Colors = normalLineColors.ToArray();
+				//normalLines.Colors = normalLineColors.ToArray();
                 oldNormalCount = normalLineVerts.Count;
             }
             tempLine.Vertices = lineVerts.ToArray();
@@ -2340,6 +2955,8 @@ async Task AnimateOctree() {
         return node;
     }
 
+    _ = Animate.ChangeText(titleText, "CMS step 2: initialize octree that intersects geometry");
+
     //await Subdivide(new Vector3(-8.0f), 16.0f, 0, 2);
     _ = Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, -405.0f, 3.0f);
     var tree = await SubdivideBfs(new Vector3(-8.0f), 16.0f, 2);
@@ -2361,7 +2978,11 @@ async Task AnimateOctree() {
     var cellLines = new Line3D(mode: MeshVertexMode.Segments);
     {
         foreach(var l in leaves) {
-            world.Destroy(l.cell);
+            async void destr() {
+                await Animate.Color(l.cell, l.cell.Color, Color.TRANSPARENT, 1.0f);
+                world.Destroy(l.cell);
+            }
+            destr();
         }
         foreach(var seg in CellOuterEdges(tree.min, tree.size)) {
             cellVerts.Add(seg.s);
@@ -2382,6 +3003,7 @@ async Task AnimateOctree() {
         traverse(tree);
         cellLines.Vertices = cellVerts.ToArray();
         cellLines.Color = Color.VIOLET;
+        cellLines.Width = 3.0f;
         World.current.CreateInstantly(cellLines);
         await Time.WaitSeconds(0.25f);
     }
@@ -2415,17 +3037,27 @@ async Task AnimateOctree() {
         reasonText.Anchor = new Vector2(-0.25f, 0.2f);
         await Animate.CreateText(reasonText, TextCreationMode.Fade, 0.0f);
         await Time.WaitSeconds(0.5f);
-        var tasks = reasonText.CurrentShapes.Select(async g => await Animate.Color(g.s, g.s.Color, Color.TRANSPARENT, 0.5f)).ToArray();
+        var tasks = reasonText.CurrentShapes.Select(async g => await Animate.Color(g.s, g.s.Color, Color.TRANSPARENT, 0.1f)).ToArray();
         await Task.WhenAll(tasks);
         world.Destroy(reasonText);
     }
 
     int caseCount = 0;
 
+    _ = Animate.ChangeText(titleText, "CMS step 3: adaptive octree subdivision");
+    var ruleText1 = new Text2D("Rule 1: Edge ambiguity (multiple intersections on cell edge) -> subdivide cell");
+    ruleText1.Color = (Color.GREEN*0.85f).WithA(1.0f);
+    ruleText1.Anchor = new Vector2(-0.45f, -0.3f);
+    var ruleText2 = new Text2D("Rule 2: Dot product of any pair of intersecting normals is below a specified threshold (complex surface) -> subdivide cell");
+    ruleText2.Color = (Color.GREEN*0.85f).WithA(1.0f);
+    ruleText2.Anchor = new Vector2(-0.45f, -0.3f);
+    ruleText2.Position = new Vector2(0.0f, -50.0f);
+    await world.CreateFadeIn(ruleText1, 0.7f);
+    await world.CreateFadeIn(ruleText2, 0.7f);
+
     var tasks = leaves.Select(l => Animate.Color(l.cell, l.cell.Color, Color.TRANSPARENT, 0.5f)).ToArray();
     await Task.WhenAll(tasks);
-    async Task SubdiveIfNeeded(VisNode l, bool quick) {
-
+    async Task SubdiveIfNeeded(VisNode l, bool quick, int maxDepth) {
         quick = caseCount > 4;
         if (!quick) {
             var forward = Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.UP) * Quaternion.AngleAxis(float.DegreesToRadians(45.0f), Vector3.RIGHT) * Vector3.FORWARD;
@@ -2433,7 +3065,7 @@ async Task AnimateOctree() {
             await Animate.TransformToLimited(World.current.ActiveCamera, pos, rot, 0.5f, 5.0f);
         }
         if (!highlightLines.Created) {
-            await world.CreateFadeIn(highlightLines, quick ? 0.1f : 0.5f);
+            await world.CreateFadeIn(highlightLines, quick ? 0.5f : 0.5f);
             highlightLines.Position = l.min;
             highlightLines.Scale = new Vector3(l.size);
         } else {
@@ -2487,7 +3119,7 @@ async Task AnimateOctree() {
 
         //await Time.WaitSeconds(quick ? 0.1f : 0.5f);
         bool complx = CMSCell.LikelyToContainComplexSurface(allIntr.ToArray());
-        if ((complx && l.depth < 4) || (foundAny && l.depth < 4)) {
+        if ((complx && l.depth < maxDepth) || (foundAny && l.depth < maxDepth)) {
             var text = complx ? "Likely complex surface" : "Edge ambiguity";
 
             async Task doSub() {
@@ -2503,7 +3135,7 @@ async Task AnimateOctree() {
             foreach(var child in l.children) {
                 if (child != null) {
                     if (child.depth < 44) {
-                        await SubdiveIfNeeded(child, quick);
+                        await SubdiveIfNeeded(child, quick, maxDepth);
                     }
                 }
             }
@@ -2526,15 +3158,24 @@ async Task AnimateOctree() {
     var originalRot = World.current.ActiveCamera.Rotation;
 
     List<Task> subdiveTasks = new List<Task>();
+    bool goingfast = false;
     foreach (var l in leaves) {
         if (caseCount < 3) {
-            await SubdiveIfNeeded(l, false);
+            await SubdiveIfNeeded(l, false, hermiteDepth);
         } else {
-            subdiveTasks.Add(SubdiveIfNeeded(l, true));
+            if (!goingfast) {
+                await Time.WaitSeconds(1.0f);
+            }
+            goingfast = true;
+            subdiveTasks.Add(SubdiveIfNeeded(l, true, hermiteDepth));
         }
     }
 
     _ = Animate.TransformTo(World.current.ActiveCamera, originalPos, originalRot, 1.0f);
+
+    _ = world.DestroyFadeOut(ruleText1, 0.7f);
+    _ = world.DestroyFadeOut(ruleText2, 0.7f);
+
     await Animate.Color(highlightLines, highlightLines.Color, Color.TRANSPARENT, 0.5f);
     world.Destroy(highlightLines);
     await Task.WhenAll(subdiveTasks);
@@ -2543,32 +3184,13 @@ async Task AnimateOctree() {
 
     tree.AssignIntersections(hermiteData);
 
-	List<Vector3> xlines = new();
-	List<Color> xcolors = new();
-	var xline = new Line3D(mode: MeshVertexMode.Segments);
-	world.CreateInstantly(xline);
-	void traverse2(VisNode node) {
-		for (int i = 0; i < 8; i++) {
-			Vector3 pos = node.min + CMS.cornerOffsets[i] * node.size;
-			var rand = new Random().NextSingle()*-0.05f;
-			xlines.Add(pos + rand * Vector3.RIGHT);
-			xlines.Add(pos + new Vector3(0.1f, 0.1f, 0.1f));
-			bool sample = ((node.corners >> i) & 1) == 1;
-			xcolors.Add(sample ? Color.WHITE : Color.BLACK);
-			xcolors.Add(sample ? Color.WHITE : Color.BLACK);
-		}
-		foreach(var c in node.children){
-			if (c == null) continue;
-			traverse2(c);
-		}
-	}
-	//traverse2(tree);
-	xline.Vertices = xlines.ToArray();
-	xline.Colors = xcolors.ToArray();
+    await Animate.Color(cellLines, cellLines.Color, cellLines.Color.WithA(0.1f), 0.5f);
+    //world.Destroy(cellLines);
 
+    _ = Animate.ChangeText(titleText, "CMS step 4: Evaluate cell faces");
 
-    world.Destroy(cellLines);
     var testLine = new Line3D(mode: MeshVertexMode.Segments);
+    testLine.Width = 3.0f;
     List<Vector3> testVerts = new List<Vector3>();
     List<Color> testColors = new List<Color>();
     void traverseCells(VisNode node) {
@@ -2598,12 +3220,153 @@ async Task AnimateOctree() {
     //world.CreateInstantly(testLine);
 
 	//var segments = await tree.EvaluateFaces();
-	await tree.ExtractSurface();
+	var mesh = await tree.ExtractSurface(titleText);
+
+
+    _ = Animate.ChangeText(titleText, "Final mesh");
+    async Task fadeStuffOut() {
+        Task[] tasks = [Animate.Color(cellLines, cellLines.Color, Color.TRANSPARENT, 0.5f), Animate.Color(normalLines, normalLines.Color, Color.TRANSPARENT, 0.5f),
+        Animate.Color(testLine, testLine.Color, Color.TRANSPARENT, 0.5f)];
+        await Task.WhenAll(tasks);
+    world.Destroy(cellLines);
+    }
+    await fadeStuffOut();
+    await Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f + 45.0f, 10.0f); 
 
     tree.SanityCheck();
     Debug.Log("Full sanity check passed!");
 
     await Time.WaitSeconds(1.0f);
+
+    await Animate.Color(mesh, mesh.Color, Color.TRANSPARENT, 0.5f);
+    world.Destroy(mesh);
+
+    _ = Animate.ChangeText(titleText, "Glyph 64x64x64");
+
+    await Time.WaitSeconds(0.5f);
+
+    var jokeMesh = new Mesh();
+    //jokeMesh.Culling = MeshCulling.DrawCw;
+    jokeMesh.Color = Color.VIOLET;
+    jokeMesh.Vertices = jmesh.vertices.Select(x => (Vector3)x).ToArray();
+    jokeMesh.Scale = new Vector3(1.8f);
+    jokeMesh.Indices = jmesh.indices.Select(x => (uint)x).ToArray();
+    jokeMesh.Position = new Vector3(0.0f, -3.0f, 0.25f*19.2f);
+    await World.current.CreateFadeIn(jokeMesh, 0.5f);
+
+    var lorbitTask =  Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 1080.0f, 11.0f); 
+    await Time.WaitSeconds(3.0f);
+    
+    await Animate.Color(jokeMesh, jokeMesh.Color, Color.TRANSPARENT, 0.5f);
+    world.Destroy(jokeMesh);
+
+    _ = Animate.ChangeText(titleText, "Glyph 128x128x128");
+
+    hermiteData2 = MyCMS.HermiteData.FromSdf(myFunc3, myFunc3Normal, offset, gSize*0.125f, 8*gCount);
+    fastTree = new MyCMS.CMSTree(hermiteData2);
+    fastTree.Subdivide(2);
+    jmesh = fastTree.ExtractSurface();
+
+    jokeMesh.Color = Color.VIOLET;
+    jokeMesh.Vertices = jmesh.vertices.Select(x => (Vector3)x).ToArray();
+    jokeMesh.Indices = jmesh.indices.Select(x => (uint)x).ToArray();
+    jokeMesh.Scale = new Vector3(1.8f);
+    jokeMesh.Position = new Vector3(0.0f, -3.0f, 0.25f*19.2f);
+    await World.current.CreateFadeIn(jokeMesh, 0.5f);
+
+    await Time.WaitSeconds(2.0f);
+
+    await Time.WaitSeconds(0.25f);
+    await Animate.Color(jokeMesh, jokeMesh.Color, Color.TRANSPARENT, 0.5f);
+    world.Destroy(jokeMesh);
+
+
+    _ = Animate.ChangeText(titleText, "Glyph subtracted 32x32x32");
+    hermiteData2 = MyCMS.HermiteData.FromSdf(myFuncLast2, myFuncLast2Normal, offset, gSize*0.5f, 2*gCount);
+    fastTree = new MyCMS.CMSTree(hermiteData2);
+    fastTree.Subdivide(2);
+    jmesh = fastTree.ExtractSurface();
+    jokeMesh.Color = Color.VIOLET;
+    //jokeMesh.Position = new Vector3(0.0f, -3.0f, 0.25f*19.2f);
+    jokeMesh.Vertices = jmesh.vertices.Select(x => (Vector3)x).ToArray();
+    jokeMesh.Indices = jmesh.indices.Select(x => (uint)x).ToArray();
+    await World.current.CreateFadeIn(jokeMesh, 0.5f);
+
+    await Time.WaitSeconds(0.5f);
+    await lorbitTask;
+
+    await Animate.Color(jokeMesh, jokeMesh.Color, Color.TRANSPARENT, 0.5f);
+    world.Destroy(jokeMesh);
+
+    static float TestEval(System.Numerics.Vector3 pos) {
+        //return sdTorus(pos);
+        //var sphere = sdSphere((Vector3)pos - new Vector3(3.0f, 2.9f, 3.0f), 0.5f);
+        //var sphere2 = sdSphere((Vector3)pos - new Vector3(4.4f, 2.8f, 3.0f), 0.5f);
+        var rot = M3x3.Rotate(Quaternion.AngleAxis(-0.25f* MathF.PI, Vector3.RIGHT)* Quaternion.AngleAxis(0.13f* MathF.PI, Vector3.FORWARD)* Quaternion.AngleAxis(-0.3f* MathF.PI, Vector3.UP)) * M3x3.Scale(0.33f, 0.33f, 0.33f);
+        var pyr = sdPyramid(rot*(Vector3)pos - 0.33f*new Vector3(2.9f, 4.5f, 2.8f), 0.3f, 0.3f, 1.25f);
+        //var cube = sdBox(rot*(Vector3)pos - 0.33f*new Vector3(3.0f, 1.9f, 2.8f), new Vector3(0.6f));
+        //return opSmoothUnion(sphere, sphere2, k: 0.5f);
+        return pyr;
+    }
+
+    Func<System.Numerics.Vector3, System.Numerics.Vector3> testNormal = 
+        (System.Numerics.Vector3 pos) => {
+            return CalcNormal(x => TestEval(x), pos, eps: 0.0033f);
+    };
+
+    MyCMS.HermiteData testHData = MyCMS.HermiteData.FromSdf(TestEval, testNormal, new System.Numerics.Vector3(0.0f), 1.0f, 8);
+    for (int j = 0; j < 8; j++) {
+        for (int i = 0; i < 8; i++) {
+            System.Console.Write($"{testHData.isInside[i, j, 3]} ");
+        }
+        System.Console.WriteLine();
+    }
+    fastTree = new MyCMS.CMSTree(testHData);
+    fastTree.Subdivide(3);
+    jmesh = fastTree.ExtractSurface();
+    jokeMesh.Color = Color.VIOLET;
+    jokeMesh.Vertices = jmesh.vertices.Select(x => (Vector3)x).ToArray();
+    jokeMesh.Indices = jmesh.indices.Select(x => (uint)x).ToArray();
+    jokeMesh.Scale = new Vector3(1.0f);
+    jokeMesh.Position = Vector3.ZERO;
+    System.Console.WriteLine($"Generated {jmesh.vertices.Length} vertices for test mesh");
+    System.Console.WriteLine($"Generated {jmesh.indices.Length/3} triangles for test mesh");
+    World.current.CreateInstantly(jokeMesh);
+
+    var normLines = new Line3D(mode: MeshVertexMode.Segments);
+    normLines.Color = Color.GREEN;
+    List<Vector3> nlines = new();
+    List<Color> ncolors = new();
+    for (int d = 0; d < 3; d++)
+    for (int i = 0; i < 8; i++)
+    for (int j = 0; j < 8; j++)
+    for (int k = 0; k < 8; k++) {
+        var intr = testHData.intersections[d, i, j, k];
+        if (intr.HasValue) {
+            nlines.Add(intr.Value.p);
+            nlines.Add(intr.Value.p + intr.Value.n * 0.5f);
+            ncolors.Add(d switch {
+                0 => Color.RED,
+                1 => Color.GREEN,
+                2 => Color.BLUE,
+                _ => Color.WHITE
+            });
+            ncolors.Add(ncolors.Last());
+        }
+    }
+    normLines.Vertices = nlines.ToArray();
+    normLines.Colors = ncolors.ToArray();
+    World.current.CreateInstantly(normLines);
+
+    var egrid = make3DGrid(new Vector3(4.0f, 0.0f, 0.0f), 1.0f, 4);
+    var egridLines = new Line3D();
+    egridLines.Color = (Color.WHITE*0.5f).WithA(0.2f);
+    egridLines.Width = 3.0f;
+    egridLines.Vertices = egrid.ToArray();
+    var egridColor = egridLines.Color;
+    world.CreateInstantly(egridLines);
+
+    await Time.WaitSeconds(2.0f);
 }
 
 async Task AnimateAmbiguous3D() {
@@ -2716,7 +3479,7 @@ async Task AnimateAmbiguous3D() {
 
     var cubeLines = new Line3D();
     cubeLines.Color = Color.BLACK;
-    cubeLines.Width = 2.0f;
+    cubeLines.Width = 4.0f;
     Vector3[] vs = new Vector3[24];
     for (int i = 0; i < 12; i++) {
         var (c1, c2) = CMS.cubeEdgeCorners[i];
@@ -2765,7 +3528,7 @@ async Task AnimateAmbiguous3D() {
     allIntersections.AddRange(intersections2);
     var normalLines = new Line3D();
     normalLines.Color = Color.GREEN;
-    normalLines.Width = 3.0f;
+    normalLines.Width = 5.0f;
     normalLines.Vertices = allIntersections.SelectMany(i => new Vector3[] { i.v, i.v + 0.3f*i.n }).ToArray();
     world.CreateInstantly(normalLines);
 
@@ -2811,7 +3574,7 @@ async Task AnimateAmbiguous3D() {
     // connect triangle vertices
     var triangleLines = new Line3D();
     triangleLines.Color = Color.YELLOW;
-    triangleLines.Width = 4.0f;
+    triangleLines.Width = 6.0f;
     triangleLines.Vertices = new Vector3[] {
         intersections2[0].v,
         intersections2[1].v,
@@ -2863,8 +3626,10 @@ async Task AnimateAmbiguous3D() {
 
     await Time.WaitSeconds(1.0f);
 
+    var fanColor = new Color("#baac7d");
+
     var recFan11 = new Mesh();
-    recFan11.Color = Color.ORANGE;
+    recFan11.Color = fanColor;
     recFan11.Outline = Color.BLACK;
     recFan11.Vertices = new Vector3[] {
         intersections11[0].v,
@@ -2875,7 +3640,7 @@ async Task AnimateAmbiguous3D() {
     recFan11.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
 
     var recFan12 = new Mesh();
-    recFan12.Color = Color.ORANGE;
+    recFan12.Color = fanColor;
     recFan12.Outline = Color.BLACK;
     recFan12.Vertices = new Vector3[] {
         intersections12[0].v,
@@ -2886,7 +3651,7 @@ async Task AnimateAmbiguous3D() {
     recFan12.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
 
     var recFan21 = new Mesh();
-    recFan21.Color = Color.ORANGE;
+    recFan21.Color = fanColor;
     recFan21.Outline = Color.BLACK;
     recFan21.Vertices = new Vector3[] {
         intersections21[0].v,
@@ -2897,7 +3662,7 @@ async Task AnimateAmbiguous3D() {
     recFan21.Indices = new uint[] { 0, 1, 3, 1, 2, 3, 2, 0, 3 };
 
     var recFan22 = new Mesh();
-    recFan22.Color = Color.ORANGE;
+    recFan22.Color = fanColor;
     recFan22.Outline = Color.BLACK;
     recFan22.Vertices = new Vector3[] {
         intersections22[0].v,
@@ -2926,7 +3691,7 @@ async Task AnimateAmbiguous3D() {
     world.Destroy(recFan22);
 
     var recFan2Alt = new Mesh();
-    recFan2Alt.Color = Color.ORANGE;
+    recFan2Alt.Color = fanColor;
     recFan2Alt.Outline = Color.BLACK;
     recFan2Alt.Vertices = new Vector3[] {
         intersections2[0].v,
@@ -2957,15 +3722,20 @@ async Task AnimateAmbiguous3D() {
             world.Destroy(s);
         }
     }
+
+    _ = Animate.ChangeText(titleText, "");
 }
 
 async Task AnimateAmbiguous2D() {
+    titleText.Anchor = new Vector2(-0.3f, titleText.Anchor.y);
+    _ = Animate.ChangeText(titleText, "2D face ambiguities");
+
     var allEntities = world.BeginCapture();
 
     var gridPath1 = new PathBuilder();
-    gridPath1.Grid(100.0f, new Vector2(-700.0f, -300.0f), new Vector2(-100.0f, 300.0f));
+    gridPath1.Grid(75.0f, new Vector2(-525.0f, -225.0f), new Vector2(-75.0f, 225.0f));
     var gridPath2 = new PathBuilder();
-    gridPath2.Grid(100.0f, new Vector2(100.0f, -300.0f), new Vector2(700.0f, 300.0f));
+    gridPath2.Grid(75.0f, new Vector2(75.0f, -225.0f), new Vector2(525.0f, 225.0f));
 
     var gridShape1 = new Shape(gridPath1);
     gridShape1.ContourColor = Color.WHITE;
@@ -2975,52 +3745,52 @@ async Task AnimateAmbiguous2D() {
     world.CreateInstantly(gridShape2);
 
     var examplePath = new PathBuilder();
-    examplePath.MoveTo(new Vector2(-300.0f, 120.0f));
-    examplePath.LineTo(new Vector2(-80.0f, -100.0f));
-    examplePath.LineTo(new Vector2(-40.0f, 30.0f));
-    examplePath.LineTo(new Vector2(120.0f, 30.0f));
-    examplePath.LineTo(new Vector2(-40.0f, 150.0f));
-    examplePath.LineTo(new Vector2(-40.0f, 70.0f));
+    examplePath.MoveTo(new Vector2(-225.0f, 90.0f));
+    examplePath.LineTo(new Vector2(-60.0f, -75.0f));
+    examplePath.LineTo(new Vector2(-30.0f, 22.5f));
+    examplePath.LineTo(new Vector2(90.0f, 22.5f));
+    examplePath.LineTo(new Vector2(-30.0f, 112.5f));
+    examplePath.LineTo(new Vector2(-30.0f, 52.5f));
     examplePath.Close();
     var exampleShape = new Shape(examplePath);
     exampleShape.Mode = ShapeMode.FilledContour;
     exampleShape.ContourColor = Color.BLACK;
     exampleShape.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
-    exampleShape.Position = new Vector3(-300.0f, 0.0f, 0.0f);
+    exampleShape.Position = new Vector3(-225.0f, 0.0f, 0.0f);
     world.CreateInstantly(exampleShape);
 
     var examplePath2a = new PathBuilder();
-    examplePath2a.MoveTo(new Vector2(-300.0f, 120.0f));
-    examplePath2a.LineTo(new Vector2(-80.0f, -100.0f));
-    examplePath2a.LineTo(new Vector2(-60.0f, 30.0f));
+    examplePath2a.MoveTo(new Vector2(-225.0f, 90.0f));
+    examplePath2a.LineTo(new Vector2(-60.0f, -75.0f));
+    examplePath2a.LineTo(new Vector2(-45.0f, 22.5f));
     examplePath2a.Close();
 
     var examplePath2b = new PathBuilder();
-    examplePath2b.MoveTo(new Vector2(120.0f, 90.0f));
-    examplePath2b.LineTo(new Vector2(-40.0f, 150.0f));
-    examplePath2b.LineTo(new Vector2(-40.0f, 50.0f));
+    examplePath2b.MoveTo(new Vector2(90.0f, 67.5f));
+    examplePath2b.LineTo(new Vector2(-30.0f, 112.5f));
+    examplePath2b.LineTo(new Vector2(-30.0f, 37.5f));
     examplePath2b.Close();
 
     var exampleShape2a = new Shape(examplePath2a);
     exampleShape2a.Mode = ShapeMode.FilledContour;
     exampleShape2a.ContourColor = Color.BLACK;
     exampleShape2a.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
-    exampleShape2a.Position = new Vector3(500.0f, 0.0f, 0.0f);
+    exampleShape2a.Position = new Vector3(375.0f, 0.0f, 0.0f);
     world.CreateInstantly(exampleShape2a);
     var exampleShape2b = new Shape(examplePath2b);
     exampleShape2b.Mode = ShapeMode.FilledContour;
     exampleShape2b.ContourColor = Color.BLACK;
     exampleShape2b.Color = new Color(1.0f, 0.1f, 0.1f, 0.5f);
     exampleShape2b.Path = examplePath2b;
-    exampleShape2b.Position = new Vector3(500.0f, 0.0f, 0.0f);
+    exampleShape2b.Position = new Vector3(375.0f, 0.0f, 0.0f);
     world.CreateInstantly(exampleShape2b);
 
     // yellow highlight
 
     var highlightPath1 = new PathBuilder();
-    highlightPath1.Rectangle(new Vector2(-400.0f, 0.0f), new Vector2(-300.0f, 100.0f));
+    highlightPath1.Rectangle(new Vector2(-300.0f, 0.0f), new Vector2(-225.0f, 75.0f));
     var highlightPath2 = new PathBuilder();
-    highlightPath2.Rectangle(new Vector2(400.0f, 0.0f), new Vector2(500.0f, 100.0f));
+    highlightPath2.Rectangle(new Vector2(300.0f, 0.0f), new Vector2(375.0f, 75.0f));
     var highlightShape1 = new Shape(highlightPath1);  
     highlightShape1.Mode = ShapeMode.Contour;
     highlightShape1.ContourColor = 1.2f*Color.VIOLET;
@@ -3036,17 +3806,17 @@ async Task AnimateAmbiguous2D() {
 
 
     Vector2[] quadCorners1 = new Vector2[] {
-        new Vector2(-400.0f, 0.0f),
         new Vector2(-300.0f, 0.0f),
-        new Vector2(-300.0f, 100.0f),
-        new Vector2(-400.0f, 100.0f),
+        new Vector2(-225.0f, 0.0f),
+        new Vector2(-225.0f, 75.0f),
+        new Vector2(-300.0f, 75.0f),
     };
 
     Vector2[] quadCorners2 = new Vector2[] {
-        new Vector2(400.0f, 0.0f),
-        new Vector2(500.0f, 0.0f),
-        new Vector2(500.0f, 100.0f),
-        new Vector2(400.0f, 100.0f),
+        new Vector2(300.0f, 0.0f),
+        new Vector2(375.0f, 0.0f),
+        new Vector2(375.0f, 75.0f),
+        new Vector2(300.0f, 75.0f),
     };
 
     await Time.WaitSeconds(2.0f);
@@ -3055,13 +3825,13 @@ async Task AnimateAmbiguous2D() {
     Circle[] cornerCircles1 = new Circle[4];
     Circle[] cornerCircles2 = new Circle[4];
     for (int i = 0; i < 4; i++) {
-        var c1 = new Circle(10.0f);
+        var c1 = new Circle(7.5f);
         c1.Color = cornerValues[i] ? Color.WHITE : Color.BLACK;
         c1.Position = quadCorners1[i];
         c1.SortKey.Value = 2;
         _ = world.CreateFadeIn(c1, 0.5f);
         cornerCircles1[i] = c1;
-        var c2 = new Circle(10.0f);
+        var c2 = new Circle(7.5f);
         c2.Color = cornerValues[i] ? Color.WHITE : Color.BLACK;
         c2.Position = quadCorners2[i];
         c2.SortKey.Value = 2;
@@ -3072,7 +3842,7 @@ async Task AnimateAmbiguous2D() {
     await Time.WaitSeconds(1.0f);
 
     var caseText1 = new Text2D("1010");
-    caseText1.Position = new Vector3(-500.0f, -400.0f, 0.0f);
+    caseText1.Position = new Vector3(-375.0f, -300.0f, 0.0f);
     caseText1.Size = 64.0f;
     var shapes = caseText1.CurrentShapes.Select(x => x.s).ToArray();
     shapes[0].Color = Color.WHITE;
@@ -3080,7 +3850,7 @@ async Task AnimateAmbiguous2D() {
     shapes[2].Color = Color.WHITE;
     shapes[3].Color = Color.BLACK;
     var caseText2 = world.Clone(caseText1);
-    caseText2.Position = new Vector3(300.0f, -400.0f, 0.0f);
+    caseText2.Position = new Vector3(225.0f, -300.0f, 0.0f);
     var shapes2 = caseText2.CurrentShapes.Select(x => x.s).ToArray();
     shapes2[0].Color = Color.WHITE;
     shapes2[1].Color = Color.BLACK;
@@ -3110,7 +3880,7 @@ async Task AnimateAmbiguous2D() {
 
     async Task showCase(int[] edges, Vector2 pos, string label, bool invert = false) {
         PathBuilder pb = new PathBuilder();
-        pb.Rectangle(new Vector2(0.0f), new Vector2(100.0f));
+        pb.Rectangle(new Vector2(0.0f), new Vector2(75.0f));
         var shape = new Shape(pb);
         shape.Mode = ShapeMode.Contour;
         shape.ContourColor = Color.WHITE;
@@ -3125,8 +3895,8 @@ async Task AnimateAmbiguous2D() {
             var repCheck = new int[] { c11, c12, c21, c22 };
             // find repeated corner
             if (!invert) {
-                pb2.MoveTo(50f*(CMS.quadCorners[c11] + CMS.quadCorners[c12]));
-                pb2.LineTo(50f*(CMS.quadCorners[c21] + CMS.quadCorners[c22]));
+                pb2.MoveTo(37.5*(CMS.quadCorners[c11] + CMS.quadCorners[c12]));
+                pb2.LineTo(37.5*(CMS.quadCorners[c21] + CMS.quadCorners[c22]));
                 int rep = -1;
                 for (int j = 0; j < 4; j++) {
                     if (repCheck.Count(x => x == repCheck[j]) > 1) {
@@ -3134,14 +3904,14 @@ async Task AnimateAmbiguous2D() {
                         break;
                     }
                 }
-                pb2.LineTo(100f*CMS.quadCorners[rep]);
+                pb2.LineTo(75*CMS.quadCorners[rep]);
             } else {
-                pb2.MoveTo(100.0f*new Vector2(0.0f));
-                pb2.LineTo(100.0f*new Vector2(0.5f, 0.0f));
-                pb2.LineTo(100.0f*new Vector2(1.0f, 0.5f));
-                pb2.LineTo(100.0f*new Vector2(1.0f, 1.0f));
-                pb2.LineTo(100.0f*new Vector2(0.5f, 1.0f));
-                pb2.LineTo(100.0f*new Vector2(0.0f, 0.5f));
+                pb2.MoveTo(75f*new Vector2(0.0f));
+                pb2.LineTo(75f*new Vector2(0.5f, 0.0f));
+                pb2.LineTo(75f*new Vector2(1.0f, 0.5f));
+                pb2.LineTo(75f*new Vector2(1.0f, 1.0f));
+                pb2.LineTo(75f*new Vector2(0.5f, 1.0f));
+                pb2.LineTo(75f*new Vector2(0.0f, 0.5f));
             }
             var shape2 = new Shape(pb2);
             shape2.Mode = ShapeMode.FilledContour;
@@ -3153,19 +3923,19 @@ async Task AnimateAmbiguous2D() {
         var labelShape = new Text2D(label);
         labelShape.Size = 24.0f;
         labelShape.Color = Color.WHITE;
-        labelShape.Position = pos + new Vector2(-20.0f, 120.0f);
+        labelShape.Position = pos + new Vector2(-15.0f, 90.0f);
         _ = world.CreateFadeIn(labelShape, 0.5f);
         await Time.WaitSeconds(0.5f);
     }
 
-    await showCase(new int[] { 1, 0, 3, 2}, new Vector2(-100.0f, 350.0f), "10a (1010)");
-    await showCase(new int[] { 3, 0, 1, 2}, new Vector2(100.0f, 350.0f), "10b (1010)", invert: true);
+    await showCase(new int[] { 1, 0, 3, 2}, new Vector2(-75.0f, 262.5f), "10a (1010)");
+    await showCase(new int[] { 3, 0, 1, 2}, new Vector2(75.0f, 262.5f), "10b (1010)", invert: true);
 
 
     await Time.WaitSeconds(1.0f);
 
     async Task moveGrid2() {
-        float moveAmount = 2000.0f;
+        float moveAmount = 1500.0f;
         var task = Animate.Offset(gridShape2, new Vector3(moveAmount, 0.0f, 0.0f));
         foreach(var shape in shapes2) {
             task = Animate.Offset(shape, new Vector3(moveAmount, 0.0f, 0.0f));
@@ -3180,7 +3950,7 @@ async Task AnimateAmbiguous2D() {
             _ = Animate.Offset(mcs2Tasks[i].Result, new Vector3(moveAmount, 0.0f, 0.0f));
         }
 
-        moveAmount = 450.0f;
+        moveAmount = 337.5f;
         task = Animate.Offset(gridShape1, new Vector3(moveAmount, 0.0f, 0.0f));
         foreach(var shape in shapes) {
             task = Animate.Offset(shape, new Vector3(moveAmount, 0.0f, 0.0f));
@@ -3200,23 +3970,23 @@ async Task AnimateAmbiguous2D() {
     await moveGrid2();
 
 
-    var gridBase = new Vector2(50.0f, 0.0f);
+    var gridBase = new Vector2(37.5f, 0.0f);
 
     (Vector2, Vector2, bool)[] intersections1 = new (Vector2, Vector2, bool)[] {
-        (new Vector2(50.0f, 0.0f), new Vector2(1.0f, -0.3f).Normalized, true),
-        (new Vector2(100.0f, 33.0f), new Vector2(0.0f, -1.0f).Normalized, false),
-        (new Vector2(0.0f, 80.0f), new Vector2(0.15f, 1.0f).Normalized, false),
-        (new Vector2(60.0f, 100.0f), new Vector2(-1.0f, 0.0f).Normalized, true),
+        (new Vector2(37.5f, 0.0f), new Vector2(1.0f, -0.3f).Normalized, true),
+        (new Vector2(75.0f, 24.75f), new Vector2(0.0f, -1.0f).Normalized, false),
+        (new Vector2(0.0f, 60.0f), new Vector2(0.15f, 1.0f).Normalized, false),
+        (new Vector2(45.0f, 75.0f), new Vector2(-1.0f, 0.0f).Normalized, true),
     };
 
     var caseLinePath = new PathBuilder();
-    caseLinePath.MoveTo(new Vector2(-20.0f, 0.0f));
-    caseLinePath.LineTo(new Vector2(120.0f, 0.0f));
+    caseLinePath.MoveTo(new Vector2(-15.0f, 0.0f));
+    caseLinePath.LineTo(new Vector2(90.0f, 0.0f));
     var caseLine = new Shape(caseLinePath);
     caseLine.Mode = ShapeMode.Contour;
     caseLine.ContourColor = 1.3f*Color.YELLOW;
     caseLine.ContourSize = 3.0f;
-    caseLine.Position = new Vector2(-100.0f, 330.0f);
+    caseLine.Position = new Vector2(-75.0f, 247.5f);
     caseLine.SortKey.Value = 1;
     world.CreateInstantly(caseLine);
     await Animate.InterpF(x => {
@@ -3225,13 +3995,13 @@ async Task AnimateAmbiguous2D() {
 
     List<Shape> intersectionShapes = new List<Shape>();
     foreach (var intr in intersections1) {
-        var c = new Circle(8.0f);
+        var c = new Circle(6.0f);
         c.Color = Color.YELLOW;
         c.Position = intr.Item1 + gridBase;
         c.SortKey.Value = 2;
         var pb = new PathBuilder();
         pb.MoveTo(intr.Item1);
-        pb.LineTo(intr.Item1 + 30.0f*intr.Item2);
+        pb.LineTo(intr.Item1 + 22.5f*intr.Item2);
         var l = new Shape(pb);
         l.Mode = ShapeMode.Contour;
         l.ContourColor = Color.GREEN;
@@ -3276,7 +4046,7 @@ async Task AnimateAmbiguous2D() {
             foreach (var i in els) {
                 var tpb = new PathBuilder();
                 tpb.MoveTo(intersections1[i].Item1);
-                float len = 100.0f;
+                float len = 75.0f;
                 tpb.LineTo(intersections1[i].Item1 
                     + (!intersections1[i].Item3 ? len*intersections1[i].Item2.PerpCw : len*intersections1[i].Item2.PerpCcw));
                 var tl = new Shape(tpb);
@@ -3288,9 +4058,9 @@ async Task AnimateAmbiguous2D() {
                 task = world.CreateFadeIn(tl, 0.5f);
                 nws.Add(tl);
             }
-            var intr = new Circle(8.0f);
+            var intr = new Circle(6.0f);
             intr.Color = Color.ORANGE;
-            intr.Position = gridBase + v*100.0f;
+            intr.Position = gridBase + v*75.0f;
             intr.SortKey.Value = 2;
             task = world.CreateFadeIn(intr, 0.5f);
             garbage.Add(intr);
@@ -3301,7 +4071,7 @@ async Task AnimateAmbiguous2D() {
             }
             var pb = new PathBuilder();
             pb.MoveTo(intersections1[p1].Item1);
-            pb.LineTo(v*100.0f);
+            pb.LineTo(v*75.0f);
             pb.LineTo(intersections1[p2].Item1);
             var l = new Shape(pb);
             l.Mode = ShapeMode.Contour;
@@ -3332,7 +4102,7 @@ async Task AnimateAmbiguous2D() {
     _ = Animate.Color(intersectionShapes[2], Color.YELLOW, col, 1.0f);
     await Animate.Color(intersectionShapes[4], col, Color.YELLOW, 1.0f);
 
-    await Animate.Offset(caseLine, new Vector3(200.0f, 0.0f, 0.0f));
+    await Animate.Offset(caseLine, new Vector3(150.0f, 0.0f, 0.0f));
     await Time.WaitSeconds(1.0f);
 
     await tryExample(pairings2);
@@ -3360,9 +4130,16 @@ async Task AnimateAmbiguous2D() {
             world.Destroy(s);
         }
     }
+
+    _ = Animate.ChangeText(titleText, "3D internal ambiguity");
+    await Animate.InterpF(x => {
+        titleText.Anchor = new Vector2(x, titleText.Anchor.y);
+    }, -0.3f, 0.0f, 1.0f);
 }
 
 async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
+    _ = Animate.ChangeText(titleText, "Cube generation: intersection points");
+
     var showCube = new Cube();
     showCube.Color = Color.WHITE;
     showCube.Scale = new Vector3(3.0f);
@@ -3376,7 +4153,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
 
     var grid = new Line3D(mode: MeshVertexMode.Segments);
     grid.Color = color;
-    grid.Width = 2.0f;
+    grid.Width = 3.0f;
     world.CreateInstantly(grid);
 
     List<Vector3> vertices = new List<Vector3>();
@@ -3474,6 +4251,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         intersections.AddRange(intersections3.Select(x => (x.pos, x.normal)));
     }
 
+
     List<Sphere> sphereList = new List<Sphere>();
     foreach (var (p, n) in intersections) {
         var s = new Sphere(0.03f);
@@ -3484,6 +4262,8 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         await Time.WaitSeconds(0.01f);
     }
     await Time.WaitSeconds(1.0f);
+
+    _ = Animate.ChangeText(titleText, "Cube generation: marching cubes result");
 
     var cmsCubeLines = CubicalMarchingSquares(samples, step, min);
     cmsCubeLines.Color = Color.ORANGE;
@@ -3501,7 +4281,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     var normalLines = new Line3D();
     normalLines.Color = Color.GREEN;
     normalLines.Vertices = intersections.SelectMany(i => new Vector3[] { i.p, i.p + 0.3f*i.n }).ToArray();
-    normalLines.Width = 4.0f;
+    normalLines.Width = 6.0f;
     await world.CreateFadeIn(normalLines, 0.5f);
 
     async Task hideGrid(bool hide) {
@@ -3539,7 +4319,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         var q = new Line3D();
         q.Vertices =  lineQuadVertices;
         q.Color = Color.RED.WithA(0.4f);
-        q.Width = 2.1f;
+        q.Width = 4.1f;
 
         quads[i] = q;
         q.Position = quadOffset + CMS.quadOffsets[i];
@@ -3579,7 +4359,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     for (int i = 0; i < 8; i++) {
         var l = new Line3D();
         l.Color = Color.GREEN;
-        l.Width = 4.0f;
+        l.Width = 6.0f;
         issN[i] = l;
     }
 
@@ -3604,6 +4384,8 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         _ = world.CreateInstantly(issN[i]);
     }
 
+    _ = Animate.ChangeText(titleText, "Cube generation: 2D marching squares with sharp features");
+
     var cam = world.ActiveCamera;
     var camOrigRot = cam.Rotation;
     var camOrigPos = cam.Position;
@@ -3620,6 +4402,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }, 0.0f, 1.0f, 1.0f);
 
     await hideGrid(true);
+
 
     await FoldAll(quadOffset, ps, quads, 1.0f, MathF.PI/2.0f, 0.0f);
 
@@ -3694,7 +4477,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
                 new Vector3(p2.x, p2.y, 0.0f),
             };
             l.Color = Color.YELLOW;
-            l.Width = 4.0f;
+            l.Width = 6.0f;
             l.ParentId.Value = quads[i].Id;
             _ = world.CreateFadeIn(l, 0.5f);
             cSharpLines.Add(l);
@@ -3732,6 +4515,9 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         d = d.Normalized;
         foldTasks.Add(Animate.Offset(q, -d * 0.5f));
     }
+
+    _ = Animate.ChangeText(titleText, "Cube generation: folding 2D segments");
+
     await Task.WhenAll(foldTasks);
     // fold quads back into cube
     await FoldAll(quadOffset, ps, quads, 1.0f, 0.0f, MathF.PI/2.0f);
@@ -3775,6 +4561,9 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         }, 1.0f, 0.0f, 1.0f);
         await Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 720.0f, 20.0f);
     }
+
+    _ = Animate.ChangeText(titleText, "Cube generation: rest of the segments");
+
     var camMoveTask = moveCam();
     await hideGrid(false);
 
@@ -3784,7 +4573,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     var cornerLines = new Line3D();
     cornerLines.Color = Color.YELLOW;
     cornerLines.Vertices = cornerVerts;
-    cornerLines.Width = 4.0f;
+    cornerLines.Width = 6.0f;
     world.CreateInstantly(cornerLines);
 
     await camMoveTask;
@@ -3808,6 +4597,8 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         (new Vector3(1.0f, 3.5f, 1.0f), new Vector3(1.0f, 3.8f, 1.0f)),
     };
 
+    _ = Animate.ChangeText(titleText, "Cube generation: sharp feature (full rank)");
+
     // move camera back
     await Animate.InterpF(x => {
         cam.Position = Vector3.Lerp(startPos, targetPosition, x);
@@ -3819,7 +4610,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         var cornerLine = new Line3D();
         cornerLine.Color = Color.GREEN;
         cornerLine.Vertices = new Vector3[] { cornerNormals[i].Item1 + min + new Vector3(0.001f), cornerNormals[i].Item2 + min + new Vector3(0.001f) };
-        cornerLine.Width = 4.0f;
+        cornerLine.Width = 6.0f;
         world.CreateInstantly(cornerLine);
         cornerLines2[i] = cornerLine;
     }
@@ -3901,7 +4692,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         new Vector3(0.5f, 3.5f, 1.0f),
         new Vector3(0.5f, 3.0f, 1.0f),
     };
-
+    var fanColor = new Color("#baac7d"); 
     var mesh = new Mesh();
     List<Vector3> fanV = new ();
     List<uint> fanI = new ();
@@ -3917,10 +4708,12 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }
     mesh.Vertices = fanV.ToArray();
     mesh.Indices = fanI.ToArray();
-    mesh.Color = Color.ORANGE;
+    mesh.Color = fanColor;
     await world.CreateFadeIn(mesh, 0.5f);
 
     await Time.WaitSeconds(1.0f);
+
+    _ = Animate.ChangeText(titleText, "Cube generation: no sharp feature");
 
     targetLookAt = min + new Vector3(0.5f, 2.5f, 1.5f);
     toTarget = targetLookAt - targetPosition;
@@ -3949,13 +4742,13 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         var cornerLine = new Line3D();
         cornerLine.Color = 1.5f*Color.GREEN;
         cornerLine.Vertices = new Vector3[] { cornerNormals[i].Item1 + min + new Vector3(0.001f), cornerNormals[i].Item2 + min + new Vector3(0.001f) };
-        cornerLine.Width = 4.0f;
+        cornerLine.Width = 6.0f;
         _ = world.CreateFadeIn(cornerLine, 0.5f);
         cornerLines2[i] = cornerLine;
     }
     Line3D cornerContour = new Line3D();
     cornerContour.Color = Color.YELLOW;
-    cornerContour.Width = 4.0f;
+    cornerContour.Width = 6.0f;
     cornerContour.Vertices = new Vector3[] {
         cornerNormals[3].Item1 + min + new Vector3(0.001f),
         cornerNormals[0].Item1 + min + new Vector3(0.001f),
@@ -3998,11 +4791,13 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }
     fanMesh2.Vertices = fanV.ToArray();
     fanMesh2.Indices = fanI.ToArray();
-    fanMesh2.Color = Color.ORANGE;
+    fanMesh2.Color = fanColor;
     fanMesh2.Outline = Color.BLACK;
     await world.CreateFadeIn(fanMesh2, 0.5f);
 
     await Time.WaitSeconds(1.0f);
+
+    _ = Animate.ChangeText(titleText, "Cube generation: sharp feature (degenerate)");
 
     targetLookAt = min + new Vector3(0.5f, 3.5f, 1.5f);
     toTarget = targetLookAt - targetPosition;
@@ -4036,14 +4831,14 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
         var cornerLine = new Line3D();
         cornerLine.Color = 1.5f*cornerNormals3[i].Item3;
         cornerLine.Vertices = new Vector3[] { cornerNormals3[i].Item1 + min + new Vector3(0.002f), cornerNormals3[i].Item2 + min + new Vector3(0.002f) };
-        cornerLine.Width = 4.0f;
+        cornerLine.Width = 6.0f;
         _ = world.CreateFadeIn(cornerLine, 0.5f);
         cornerLines2[i] = cornerLine;
     }
 
     var cornerContour2 = new Line3D();
     cornerContour2.Color = Color.YELLOW;
-    cornerContour2.Width = 4.0f;
+    cornerContour2.Width = 6.0f;
     cornerContour2.Vertices = new Vector3[] {
         cornerNormals3[0].Item1 + min + new Vector3(0.002f),
         cornerNormals3[1].Item1 + min + new Vector3(0.002f),
@@ -4095,7 +4890,7 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     fanI.AddRange([0, 1, 8, 1, 2, 8, 2, 3, 8, 3, 0, 8,  4, 5, 8, 5, 6, 8, 6, 7, 8, 7, 4, 8]);
     fanMesh3.Vertices = fanV.ToArray();
     fanMesh3.Indices = fanI.ToArray();
-    fanMesh3.Color = Color.ORANGE;
+    fanMesh3.Color = fanColor;
     fanMesh3.Outline = Color.BLACK;
     await world.CreateFadeIn(fanMesh3, 0.5f);
 
@@ -4118,8 +4913,10 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
 
     await Time.WaitSeconds(1.0f);*/
 
+    _ = Animate.ChangeText(titleText, "Cube generation: done");
+
     var wholeMesh = DoCMS2(tinyCube, tinyCubeNormal, nmax: 0);
-    wholeMesh.Color = Color.ORANGE;
+    wholeMesh.Color = fanColor;
     wholeMesh.Outline = Color.BLACK;
     async Task createMesh() {
         await world.CreateFadeIn(wholeMesh, 0.5f);
@@ -4162,6 +4959,8 @@ async Task<Line3D> AnimateGrid(Vector3 min, float step, int size, Color color) {
     }, 0.0f, 1.0f, 1.0f);
     await Animate.OrbitAndLookAt(cam, Vector3.UP, Vector3.ZERO, 360.0f, 5.0f);
 
+    _ = Animate.ChangeText(titleText, "");
+
     // hide all
     _ = hideGrid(true);
     await Animate.InterpF(x => {
@@ -4189,8 +4988,4 @@ List<Vector3> make3DGrid(Vector3 min, float step, int size) {
     return vertices;
 }
 
-void Test() {
-    var p = CMS.FacePosToCubePos(3, new Vector2(0.25f, 0.25f));
-    //Debug.Assert(p == new Vector3(0.0f, 0.25f, 0.25f));
-}
 }

@@ -239,23 +239,25 @@ public class CMS {
     };
 
     // NOTE: these are set up such that first is cw and second ccw (when rotating 90 degrees)
-    public static readonly int [,] quadSegmentsXX = new int[16, 4] {
+    public static readonly int [,] quadSegmentsXX = new int[18, 4] {
         { -1, -1, -1, -1},
         {  3,  0, -1, -1},
         {  0,  1, -1, -1},
         {  3,  1, -1, -1},
         {  1,  2, -1, -1},
-        {  0,  3,  2,  1}, // TODO
+        {  3,  0,  1,  2}, // 5a
         {  0,  2, -1, -1},
         {  3,  2, -1, -1},
         {  2,  3, -1, -1},
         {  2,  0, -1, -1},
-        {  1,  0,  3,  2}, // TODO
+        {  0,  1,  2,  3}, // 10a
         {  2,  1, -1, -1},
         {  1,  3, -1, -1},
         {  1,  0, -1, -1},
         {  0,  3, -1, -1},
         { -1, -1, -1, -1},
+        {  1,  0,  3,  2}, // 5b
+        {  0,  3,  2,  1}, // 10b
     };
 
     // segment connections, indices are to quadEdges

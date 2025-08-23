@@ -1,28 +1,33 @@
 <Project Sdk="Microsoft.NET.Sdk">
 <PropertyGroup>
 <TargetFramework>net8.0</TargetFramework>
+<OutputType>Library</OutputType>
 </PropertyGroup>
 
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-<OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
+    <OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
 </PropertyGroup>
 <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-<OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
+    <OutputPath Condition="'$(OutputPath)'=='' ">..\bin</OutputPath>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
 </PropertyGroup>
 <PropertyGroup>
 <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 </PropertyGroup>
 
 <ItemGroup>
 <Reference Include="AnimLib">
-    <HintPath>/home/ttammear/Projects/animlib/AnimLib/bin/Debug/net8.0/AnimLib.dll</HintPath>
+    <HintPath>/home/ttammear/Proj/AnimLib/AnimLib/bin/Debug/net8.0/AnimLib.dll</HintPath>
 </Reference>
 </ItemGroup>
 
 <ItemGroup>
   <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.2.2" />
   <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+  <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
 </ItemGroup>
 
 </Project>
